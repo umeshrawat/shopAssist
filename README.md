@@ -13,22 +13,22 @@ An intelligent shopping assistant that uses Retrieval-Augmented Generation (RAG)
 
 ## Project Code Repo Structure Description
 
-# src/: 
+### src/: 
 Source code modules (retriever, generator, embedding, inference, ui)
 
-# notebooks/:
+### notebooks/:
 EDA, experiments, ad-hoc analysis (non-production code)
 
-# docs/:
+### docs/:
 Architecure, setup guides, testing reports (for collaborators and future scope)
 
-# data/:
+### data/:
 Cleaned samples, vectorstore dumps
 
-# outputs/:
+### outputs/:
 Retrieval results, logs
 
-# tests/:
+### tests/:
 Unit tests, E2E scripts
 
 ## Setup Instructions (Local Development)
