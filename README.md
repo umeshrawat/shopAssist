@@ -11,6 +11,26 @@ An intelligent shopping assistant that uses Retrieval-Augmented Generation (RAG)
 - Hosting: AWS EC2 + Docker
 - UI: Streamlit / Gradio
 
+## Project Code Repo Structure Description
+
+# src/: 
+Source code modules (retriever, generator, embedding, inference, ui)
+
+# notebooks/:
+EDA, experiments, ad-hoc analysis (non-production code)
+
+# docs/:
+Architecure, setup guides, testing reports (for collaborators and future scope)
+
+# data/:
+Cleaned samples, vectorstore dumps
+
+# outputs/:
+Retrieval results, logs
+
+# tests/:
+Unit tests, E2E scripts
+
 ## Setup Instructions (Local Development)
 
 1. Clone this repo:
