@@ -6,4 +6,4 @@
 
 **2. Why this code repo folder structure?** Please refer folder descriptions in the project's README.md
 
-3. 
+**3. Scope of Project ** Refer README.md
