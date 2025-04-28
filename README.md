@@ -11,6 +11,16 @@ An intelligent shopping assistant that uses Retrieval-Augmented Generation (RAG)
 - Hosting: AWS EC2 + Docker
 - UI: Streamlit / Gradio
 
+## Project Scope (4 Week Duration)
+1. English language support only.
+2. 
+
+
+## Future Capabilities
+1. International Language support at user input (UI).
+2. 
+
+
 ## Project Code Repo Structure Description
 
 ### src/: 
