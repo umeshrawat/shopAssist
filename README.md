@@ -38,7 +38,7 @@ Unit tests, E2E scripts
    git clone https://github.com/umeshrawat/shopAssist.git
    cd rag-shopping-assistant
    ```
-
+2.  $env:PYTHONPATH = "$PWD\src"
 2. Create environment:
    ```bash
    conda create -n rag-assistant python=3.10
