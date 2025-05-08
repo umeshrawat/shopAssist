@@ -8,3 +8,6 @@ def getSentenceTransformerGeminiModel():
     # Load the model
     model = SentenceTransformer("Gemini")
     return model
+def getSentenceTransformerHuggingFaceModel():
+    model = "intfloat/e5-large-v2"
+    return model

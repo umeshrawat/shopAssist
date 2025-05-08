@@ -1,12 +1,13 @@
 import numpy as np
 from fastapi import FastAPI, Query
 from ingestion.ingest import retrive, getModel
-
+from ingestion.model import SearchRequest,SearchResponse
 app = FastAPI()
+app.mount("/images", static_dir="images")
 
 # Search endpoint
-@app.get("/search")
-def search(query: str = Query(..., description="Query string to search"), vectorType: str = "faiss", k: int = 2):
-    embedding = getModel().encode([query]).astype('float32')
-    results = retrive(embedding, query, vectorType, k)
-    return {"query": query, "results": results}
+@app.post("/search")
+def search(request: SearchRequest):
+    embedding = getModel().encode([request.query]).astype('float32')
+    results = retrive(embedding, request)
+    return results

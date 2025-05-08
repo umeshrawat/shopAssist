@@ -13,6 +13,7 @@ from ingestion.inferenceModel import getSentenceTransformerMiniModel, getSentenc
 import os
 import json
 import faiss
+from langchain.schema import Document
 
 INDEX_PATH_FAISS = "faiss_index"
 INDEX_PATH_CHROMADB = "chromadb_index"
@@ -26,14 +27,21 @@ documents=[]
 #     texts = [doc["text"] for doc in documents]
 #     return texts
 with open(DATA_PATH, "r") as f:
-    documents = json.load(f)
-texts = [doc["text"] for doc in documents]
+    raw_data = json.load(f)
+# texts = [doc["text"] for doc in documents]
 
+documents = [
+        Document(page_content=item["text"], metadata={"image_url": item.get("image_url", "")})
+        for item in raw_data
+    ]
+texts = [doc.page_content for doc in documents]
 
 def build_faiss_index(embeddings):
+    print(f"embeddings shape: {embeddings.shape}")
     dimension = embeddings.shape[1]
     # Load model
     model = getSentenceTransformerMiniModel()
+
     index = faiss.IndexFlatL2(dimension)
      # Check if FAISS index exists
     if os.path.exists(INDEX_PATH_FAISS):
@@ -53,8 +61,9 @@ def build_faiss_index(embeddings):
 def build_chromadb_index(embeddings):
     dimension = embeddings.shape[1]
     # Load model
-    model = getSentenceTransformerGeminiModel()
-    index = Chroma.IndexFlatL2(dimension)
+    model = getSentenceTransformerMiniModel()
+    # index = Chroma.IndexFlatL2(dimension)
+    Chroma.from_documents(documents=documents, embedding=embeddings, persist_directory=INDEX_PATH_CHROMADB)
      # Check if Chromadb index exists
     if os.path.exists(INDEX_PATH_CHROMADB):
         index = Chroma.read_index(INDEX_PATH_CHROMADB)
