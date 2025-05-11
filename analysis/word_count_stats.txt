@@ -1,0 +1,360 @@
+
+Word count analysis per column:
+==================================================
+
+Column: brand
+Mean words per cell: 6.10
+Median words per cell: 7.00
+Min words: 0
+Max words: 60
+Standard deviation: 1.43
+Total words in column: 748880
+Cells with words: 122704 out of 122734 (100.0%)
+
+Column: bullet_point
+Mean words per cell: 114.35
+Median words per cell: 83.00
+Min words: 0
+Max words: 3328
+Standard deviation: 147.39
+Total words in column: 14035053
+Cells with words: 114461 out of 122734 (93.3%)
+
+Column: color
+Mean words per cell: 8.12
+Median words per cell: 7.00
+Min words: 0
+Max words: 132
+Standard deviation: 9.45
+Total words in column: 996116
+Cells with words: 100376 out of 122734 (81.8%)
+
+Column: item_id
+Mean words per cell: 1.00
+Median words per cell: 1.00
+Min words: 1
+Max words: 1
+Standard deviation: 0.00
+Total words in column: 122734
+Cells with words: 122734 out of 122734 (100.0%)
+
+Column: item_name
+Mean words per cell: 33.28
+Median words per cell: 24.00
+Min words: 6
+Max words: 380
+Standard deviation: 33.05
+Total words in column: 4084880
+Cells with words: 122734 out of 122734 (100.0%)
+
+Column: item_weight
+Mean words per cell: 6.92
+Median words per cell: 9.00
+Min words: 0
+Max words: 9
+Standard deviation: 3.79
+Total words in column: 849303
+Cells with words: 94367 out of 122734 (76.9%)
+
+Column: material
+Mean words per cell: 2.69
+Median words per cell: 0.00
+Min words: 0
+Max words: 190
+Standard deviation: 5.76
+Total words in column: 330554
+Cells with words: 48196 out of 122734 (39.3%)
+
+Column: model_name
+Mean words per cell: 4.15
+Median words per cell: 5.00
+Min words: 0
+Max words: 189
+Standard deviation: 4.97
+Total words in column: 509626
+Cells with words: 74945 out of 122734 (61.1%)
+
+Column: model_number
+Mean words per cell: 1.76
+Median words per cell: 2.00
+Min words: 0
+Max words: 9
+Standard deviation: 0.77
+Total words in column: 215981
+Cells with words: 105407 out of 122734 (85.9%)
+
+Column: product_type
+Mean words per cell: 2.00
+Median words per cell: 2.00
+Min words: 2
+Max words: 2
+Standard deviation: 0.00
+Total words in column: 245468
+Cells with words: 122734 out of 122734 (100.0%)
+
+Column: main_image_id
+Mean words per cell: 1.00
+Median words per cell: 1.00
+Min words: 0
+Max words: 1
+Standard deviation: 0.06
+Total words in column: 122274
+Cells with words: 122274 out of 122734 (99.6%)
+
+Column: other_image_id
+Mean words per cell: 3.76
+Median words per cell: 4.00
+Min words: 0
+Max words: 20
+Standard deviation: 1.76
+Total words in column: 461922
+Cells with words: 115852 out of 122734 (94.4%)
+
+Column: item_keywords
+Mean words per cell: 442.12
+Median words per cell: 188.00
+Min words: 0
+Max words: 37514
+Standard deviation: 573.10
+Total words in column: 54263026
+Cells with words: 111000 out of 122734 (90.4%)
+
+Column: country
+Mean words per cell: 1.00
+Median words per cell: 1.00
+Min words: 1
+Max words: 1
+Standard deviation: 0.00
+Total words in column: 122734
+Cells with words: 122734 out of 122734 (100.0%)
+
+Column: marketplace
+Mean words per cell: 1.00
+Median words per cell: 1.00
+Min words: 1
+Max words: 1
+Standard deviation: 0.00
+Total words in column: 122734
+Cells with words: 122734 out of 122734 (100.0%)
+
+Column: domain_name
+Mean words per cell: 1.00
+Median words per cell: 1.00
+Min words: 1
+Max words: 1
+Standard deviation: 0.00
+Total words in column: 122734
+Cells with words: 122734 out of 122734 (100.0%)
+
+Column: node
+Mean words per cell: 11.59
+Median words per cell: 12.00
+Min words: 0
+Max words: 80
+Standard deviation: 6.37
+Total words in column: 1423019
+Cells with words: 116660 out of 122734 (95.1%)
+
+Column: style
+Mean words per cell: 2.08
+Median words per cell: 0.00
+Min words: 0
+Max words: 69
+Standard deviation: 4.93
+Total words in column: 255110
+Cells with words: 31955 out of 122734 (26.0%)
+
+Column: item_dimensions
+Mean words per cell: 7.59
+Median words per cell: 0.00
+Min words: 0
+Max words: 30
+Standard deviation: 13.04
+Total words in column: 931380
+Cells with words: 31046 out of 122734 (25.3%)
+
+Column: model_year
+Mean words per cell: 0.08
+Median words per cell: 0.00
+Min words: 0
+Max words: 2
+Standard deviation: 0.40
+Total words in column: 10222
+Cells with words: 5111 out of 122734 (4.2%)
+
+Column: color_code
+Mean words per cell: 0.11
+Median words per cell: 0.00
+Min words: 0
+Max words: 3
+Standard deviation: 0.32
+Total words in column: 13791
+Cells with words: 13785 out of 122734 (11.2%)
+
+Column: spin_id
+Mean words per cell: 0.06
+Median words per cell: 0.00
+Min words: 0
+Max words: 1
+Standard deviation: 0.24
+Total words in column: 7776
+Cells with words: 7776 out of 122734 (6.3%)
+
+Column: 3dmodel_id
+Mean words per cell: 0.06
+Median words per cell: 0.00
+Min words: 0
+Max words: 1
+Standard deviation: 0.24
+Total words in column: 7476
+Cells with words: 7476 out of 122734 (6.1%)
+
+Column: fabric_type
+Mean words per cell: 0.47
+Median words per cell: 0.00
+Min words: 0
+Max words: 145
+Standard deviation: 3.21
+Total words in column: 57906
+Cells with words: 5674 out of 122734 (4.6%)
+
+Column: item_shape
+Mean words per cell: 0.19
+Median words per cell: 0.00
+Min words: 0
+Max words: 39
+Standard deviation: 1.50
+Total words in column: 22785
+Cells with words: 4082 out of 122734 (3.3%)
+
+Column: pattern
+Mean words per cell: 0.23
+Median words per cell: 0.00
+Min words: 0
+Max words: 42
+Standard deviation: 1.94
+Total words in column: 28284
+Cells with words: 3604 out of 122734 (2.9%)
+
+Column: product_description
+Mean words per cell: 2.84
+Median words per cell: 0.00
+Min words: 0
+Max words: 1936
+Standard deviation: 37.97
+Total words in column: 348048
+Cells with words: 2616 out of 122734 (2.1%)
+
+Column: finish_type
+Mean words per cell: 0.05
+Median words per cell: 0.00
+Min words: 0
+Max words: 32
+Standard deviation: 0.60
+Total words in column: 6510
+Cells with words: 1420 out of 122734 (1.2%)
+
+Column: brand_flat
+Mean words per cell: 3.08
+Median words per cell: 4.00
+Min words: 0
+Max words: 24
+Standard deviation: 1.31
+Total words in column: 378419
+Cells with words: 122704 out of 122734 (100.0%)
+
+Column: bullet_point_flat
+Mean words per cell: 90.11
+Median words per cell: 66.00
+Min words: 0
+Max words: 3112
+Standard deviation: 119.85
+Total words in column: 11059443
+Cells with words: 114461 out of 122734 (93.3%)
+
+Column: color_flat
+Mean words per cell: 1.37
+Median words per cell: 1.00
+Min words: 0
+Max words: 52
+Standard deviation: 1.74
+Total words in column: 167678
+Cells with words: 100376 out of 122734 (81.8%)
+
+Column: item_name_flat
+Mean words per cell: 24.23
+Median words per cell: 18.00
+Min words: 1
+Max words: 282
+Standard deviation: 23.69
+Total words in column: 2973958
+Cells with words: 122734 out of 122734 (100.0%)
+
+Column: item_weight_flat
+Mean words per cell: 0.77
+Median words per cell: 1.00
+Min words: 0
+Max words: 1
+Standard deviation: 0.42
+Total words in column: 94367
+Cells with words: 94367 out of 122734 (76.9%)
+
+Column: material_flat
+Mean words per cell: 0.72
+Median words per cell: 0.00
+Min words: 0
+Max words: 101
+Standard deviation: 1.63
+Total words in column: 88718
+Cells with words: 48196 out of 122734 (39.3%)
+
+Column: model_name_flat
+Mean words per cell: 2.20
+Median words per cell: 2.00
+Min words: 0
+Max words: 138
+Standard deviation: 3.23
+Total words in column: 269671
+Cells with words: 74945 out of 122734 (61.1%)
+
+Column: model_number_flat
+Mean words per cell: 0.90
+Median words per cell: 1.00
+Min words: 0
+Max words: 8
+Standard deviation: 0.47
+Total words in column: 110575
+Cells with words: 105407 out of 122734 (85.9%)
+
+Column: product_type_flat
+Mean words per cell: 1.00
+Median words per cell: 1.00
+Min words: 1
+Max words: 1
+Standard deviation: 0.00
+Total words in column: 122734
+Cells with words: 122734 out of 122734 (100.0%)
+
+Column: item_keywords_flat
+Mean words per cell: 203.80
+Median words per cell: 110.00
+Min words: 0
+Max words: 19811
+Standard deviation: 280.70
+Total words in column: 25013060
+Cells with words: 110999 out of 122734 (90.4%)
+
+Column: node_flat
+Mean words per cell: 8.10
+Median words per cell: 9.00
+Min words: 0
+Max words: 56
+Standard deviation: 5.25
+Total words in column: 994145
+Cells with words: 116660 out of 122734 (95.1%)
+
+Overall Statistics:
+==================================================
+Total words across all columns: 121739094
+Total cells: 4786626
+Average words per cell across all columns: 25.43
