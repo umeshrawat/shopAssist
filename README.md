@@ -23,6 +23,12 @@ An intelligent shopping assistant that uses Retrieval-Augmented Generation (RAG)
 ### src/: 
 Source code modules (retriever, generator, embedding, inference)
 
+### scripts/:
+Utility scripts for data processing and testing:
+- `generate_embeddings.py`: Generates embeddings for text data using various sentence transformer models
+- `test_retriever.py`: Tests the FAISS retriever with different nprobe values
+- `analyze_word_counts.py`: Analyzes word counts in the metadata
+
 ### notebooks/:
 EDA, experiments, ad-hoc analysis (non-production code)
 
@@ -99,6 +105,25 @@ Unit tests, E2E scripts
    ```bash
    deactivate
    ```
+
+### Script Usage
+
+1. Generate embeddings:
+   ```bash
+   python scripts/generate_embeddings.py
+   ```
+   This script processes the metadata in chunks to generate embeddings using multiple models:
+   - Nomic Embed (nomic-ai/nomic-embed-text-v1.5)
+   - BGE-M3 (BAAI/bge-m3)
+   - GTE-large (Alibaba-NLP/gte-large-en-v1.5)
+   - MiniLM (all-MiniLM-L6-v2)
+
+2. Test retriever:
+   ```bash
+   python scripts/test_retriever.py
+   ```
+   This script tests the FAISS retriever with different nprobe values (5, 10, 20, 50).
+   Based on testing, nprobe=10 is recommended as it provides the best balance of speed and accuracy.
 
 ### Troubleshooting
 

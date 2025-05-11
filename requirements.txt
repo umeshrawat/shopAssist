@@ -5,3 +5,8 @@ faiss-cpu
 chromadb
 streamlit
 requests
+einops
+torch
+transformers
+numpy
+pandas
