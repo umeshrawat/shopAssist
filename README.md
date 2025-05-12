@@ -148,7 +148,105 @@ Unit tests, E2E scripts
    - Higher versions are not tested and may cause compatibility issues
 
 ## AWS Deployment Instructions
-Refer to [AWS Deployment Guide](docs/aws_deployment_guide.md)
+
+### 1. Launch an EC2 Instance
+
+- Use the AWS Console to launch a new EC2 instance (Ubuntu 22.04 or similar recommended).
+- Choose an instance type (e.g., t2.micro for testing).
+- Set up the security group to allow SSH (port 22) and any other ports your app needs.
+- Download the SSH key (`.pem` file) for access.
+
+### 2. Connect to Your EC2 Instance
+
+```bash
+ssh -i /path/to/your-key.pem ubuntu@<your-ec2-public-ip>
+```
+
+### 3. Install System Dependencies
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-pip python3-venv
+```
+
+### 4. Clone the Repository
+
+```bash
+git clone https://github.com/umeshrawat/shopAssist.git
+cd shopAssist
+```
+
+### 5. Create and Activate a Python Virtual Environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 6. Install Python Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+**Note:**  
+As we continue development, we'll update these instructions with steps for running the app, setting environment variables, and more.
+
+#### Example EC2 Hardware Specification
+
+These are the specs for the EC2 instance used in this deployment:
+
+- **Instance type:** g4dn.12xlarge
+- **CPU:** Intel(R) Xeon(R) Platinum 8259CL @ 2.50GHz (48 vCPUs)
+- **RAM:** ~187 GB
+
+> Update this section if you use a different instance type.
+
+---
+
+### Running the Embedding Generation Script
+
+> **Note:**  
+> All commands below assume you are in the project root directory:  
+> `/home/ubuntu/shopAssist`
+
+#### 1. Ensure Git LFS is installed and pull large files
+
+If you have not already, install Git LFS and pull the required data files:
+
+```bash
+sudo apt update
+sudo apt install git-lfs
+cd /home/ubuntu/shopAssist
+git lfs install
+git lfs pull
+```
+
+#### 2. Activate the virtual environment
+
+```bash
+source venv/bin/activate
+```
+
+#### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+#### 4. Run the embedding generation script
+
+```bash
+python3 scripts/generate_embeddings.py
+```
+
+---
+
+**Troubleshooting:**  
+- If you see errors about missing or corrupted Parquet files, ensure you have run `git lfs pull` in the project root.
+- Always run the script from the project root so relative paths resolve correctly.
 
 ## Hosted Notebooks
 - [EDA Notebook on Kaggle](link_to_be_added)
