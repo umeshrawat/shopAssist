@@ -249,5 +249,5 @@ python3 scripts/generate_embeddings.py
 - Always run the script from the project root so relative paths resolve correctly.
 
 ## Hosted Notebooks
-- [EDA Notebook on Kaggle](link_to_be_added)
-- [Embedding Experiments on Kaggle](link_to_be_added)
+- [EDA Notebook on Kaggle](https://www.kaggle.com/code/umeshrawat7/shopassist-eda)
+- [Embedding Experiments on Kaggle](https://www.kaggle.com/code/umeshrawat7/retrieval-augmented-shopping-assistant-embeddi)
