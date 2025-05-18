@@ -1,6 +1,29 @@
 """
 Script to generate embeddings for text data using various sentence transformer models.
 This script processes data in chunks to manage memory usage efficiently.
+
+Model Evaluation Strategy:
+1. all-MiniLM-L6-v2 (Baseline)
+   - Fast & lightweight
+   - Good for quick benchmark on retrieval accuracy, latency, and memory
+   - Best for short product names and lean metadata
+   - Suitable for CPU execution
+
+2. nomic-ai/nomic-embed-text-v1.5 (Primary Candidate)
+   - Handles long context (8192 tokens)
+   - Instruction-tuned
+   - Best balance of performance + cost
+   - Requires "search_document: " prefix
+
+3. BAAI/bge-m3 (Hybrid-capable)
+   - Excellent for multi-modal and hybrid RAG
+   - Strong candidate for final deployment
+   - Supports dense + sparse + multi-vector
+
+4. Alibaba-NLP/gte-large-en-v1.5 (Top dense retriever)
+   - Consistent performer on MTEB benchmarks
+   - Long input support
+   - Fast inference
 """
 
 import pandas as pd
@@ -9,6 +32,17 @@ from sentence_transformers import SentenceTransformer
 import torch
 import gc
 import os
+import argparse
+
+def is_kaggle():
+    """Check if running in Kaggle environment"""
+    return os.path.exists('/kaggle/input')
+
+def get_device():
+    """Get the best available device"""
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    return torch.device('cpu')
 
 def add_embedding_input_column(df, output_column='embedding_input', max_kw_words=100):
     """
@@ -51,7 +85,11 @@ def generate_embeddings(df, text_column, model_name, output_column, prefix='', n
         trust_remote_code (bool): Whether to trust remote code when loading models
     """
     print(f"Loading model: {model_name}")
+    device = get_device()
+    print(f"Using device: {device}")
+    
     model = SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
+    model.to(device)
     
     texts = df[text_column].tolist()
     if prefix:
@@ -70,43 +108,117 @@ def generate_embeddings(df, text_column, model_name, output_column, prefix='', n
         
         # Clear memory
         del chunk_embeddings
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         gc.collect()
     
     df[output_column] = embeddings
     return df
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Generate embeddings for text data')
+    parser.add_argument('--macbook', action='store_true', help='Use MacBook-friendly configuration')
+    parser.add_argument('--sample_size', type=int, default=None, help='Number of samples to process (for testing)')
+    parser.add_argument('--kaggle', action='store_true', help='Use Kaggle-optimized configuration')
+    args = parser.parse_args()
+
+    # Print environment info
+    print(f"Running in Kaggle environment: {is_kaggle()}")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+    
     # Ensure data directory exists
-    os.makedirs("data", exist_ok=True)
+    if is_kaggle():
+        data_dir = "/kaggle/working"
+    else:
+        data_dir = "data"
+    os.makedirs(data_dir, exist_ok=True)
     
     # Read the parquet file
     print("Reading parquet file...")
-    inScopeMetadata = pd.read_parquet("data/inScopeMetadata_flattened.parquet")
+    if is_kaggle():
+        inScopeMetadata = pd.read_parquet("/kaggle/input/english-language-abo-metadata/inScopeMetadata_flattened.parquet")
+    else:
+        inScopeMetadata = pd.read_parquet("data/inScopeMetadata_flattened.parquet")
+    
+    # If sample size is specified, take a random sample
+    if args.sample_size:
+        print(f"Taking random sample of {args.sample_size} rows...")
+        inScopeMetadata = inScopeMetadata.sample(n=min(args.sample_size, len(inScopeMetadata)))
     
     # Create embedding input
     print("Creating embedding input...")
     inScopeMetadata = add_embedding_input_column(inScopeMetadata)
     
-    # Generate embeddings for different models
-    models = {
-        "nomic_embed": {
-            "name": "nomic-ai/nomic-embed-text-v1.5",
-            "trust_remote_code": True
-        },
-        "bge_m3": {
-            "name": "BAAI/bge-m3",
-            "trust_remote_code": False
-        },
-        "gte_large": {
-            "name": "Alibaba-NLP/gte-large-en-v1.5",
-            "trust_remote_code": False
-        },
-        "minilm": {
-            "name": "all-MiniLM-L6-v2",
-            "trust_remote_code": False
+    # Define models based on configuration
+    if args.macbook:
+        print("Using MacBook-friendly configuration (MiniLM only)...")
+        models = {
+            "minilm": {
+                "name": "all-MiniLM-L6-v2",
+                "trust_remote_code": False,
+                "chunk_size": 8,
+                "prefix": ""
+            }
         }
-    }
+    elif args.kaggle or is_kaggle():
+        print("Using Kaggle-optimized configuration...")
+        models = {
+            "minilm": {
+                "name": "all-MiniLM-L6-v2",
+                "trust_remote_code": False,
+                "chunk_size": 32,  # Larger chunks for GPU
+                "prefix": ""
+            },
+            "nomic_embed": {
+                "name": "nomic-ai/nomic-embed-text-v1.5",
+                "trust_remote_code": True,
+                "chunk_size": 16,  # Larger chunks for GPU
+                "prefix": "search_document: "
+            },
+            "bge_m3": {
+                "name": "BAAI/bge-m3",
+                "trust_remote_code": False,
+                "chunk_size": 16,  # Larger chunks for GPU
+                "prefix": ""
+            },
+            "gte_large": {
+                "name": "Alibaba-NLP/gte-large-en-v1.5",
+                "trust_remote_code": False,
+                "chunk_size": 16,  # Larger chunks for GPU
+                "prefix": ""
+            }
+        }
+    else:
+        # Full model configuration
+        models = {
+            "minilm": {
+                "name": "all-MiniLM-L6-v2",
+                "trust_remote_code": False,
+                "chunk_size": 8,
+                "prefix": ""
+            },
+            "nomic_embed": {
+                "name": "nomic-ai/nomic-embed-text-v1.5",
+                "trust_remote_code": True,
+                "chunk_size": 4,
+                "prefix": "search_document: "
+            },
+            "bge_m3": {
+                "name": "BAAI/bge-m3",
+                "trust_remote_code": False,
+                "chunk_size": 4,
+                "prefix": ""
+            },
+            "gte_large": {
+                "name": "Alibaba-NLP/gte-large-en-v1.5",
+                "trust_remote_code": False,
+                "chunk_size": 4,
+                "prefix": ""
+            }
+        }
     
     for model_key, model_info in models.items():
         print(f"\nGenerating embeddings using {model_info['name']}")
@@ -115,14 +227,18 @@ def main():
             text_column="embedding_input",
             model_name=model_info['name'],
             output_column=f"{model_key}_embeddings",
-            chunk_size=4,
+            chunk_size=model_info['chunk_size'],
+            prefix=model_info['prefix'],
             trust_remote_code=model_info['trust_remote_code']
         )
     
     # Save results
     print("\nSaving results...")
-    inScopeMetadata.to_parquet("data/inScopeMetadata_with_embeddings.parquet")
-    print("Done!")
+    output_file = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
+    if args.sample_size:
+        output_file = os.path.join(data_dir, f"inScopeMetadata_with_embeddings_sample_{args.sample_size}.parquet")
+    inScopeMetadata.to_parquet(output_file)
+    print(f"Done! Results saved to {output_file}")
 
 if __name__ == "__main__":
     main() 
