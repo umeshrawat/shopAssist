@@ -69,11 +69,11 @@ Unit tests, E2E scripts
 
    **On macOS/Linux:**
    ```bash
-   python -m venv venv
+   python3.12 -m venv venv
    source venv/bin/activate
    ```
 
-3. Install dependencies:
+3. Install dependencies for local (Mac/CPU) development:
    ```bash
    pip install -r requirements.txt
    ```
@@ -149,10 +149,26 @@ Unit tests, E2E scripts
 
 ## AWS Deployment Instructions
 
+### Requirements Files: Local vs AWS
+
+- **requirements.txt**: Use this for local development on Mac or CPU-only environments. It does NOT include GPU/CUDA-specific packages.
+- **requirements-aws.txt**: Use this for AWS EC2 (GPU) deployment. It includes all NVIDIA CUDA and GPU-specific packages required for GPU acceleration.
+
+### How to Use
+
+- **Local (Mac/CPU):**
+  ```bash
+  pip install -r requirements.txt
+  ```
+- **AWS EC2 (GPU):**
+  ```bash
+  pip install -r requirements-aws.txt
+  ```
+
 ### 1. Launch an EC2 Instance
 
 - Use the AWS Console to launch a new EC2 instance (Ubuntu 22.04 or similar recommended).
-- Choose an instance type (e.g., t2.micro for testing).
+- Choose an instance type (e.g., g4dn.12xlarge for GPU support).
 - Set up the security group to allow SSH (port 22) and any other ports your app needs.
 - Download the SSH key (`.pem` file) for access.
 
@@ -183,10 +199,10 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 6. Install Python Dependencies
+### 6. Install Python Dependencies (with GPU support)
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-aws.txt
 ```
 
 ---
@@ -233,7 +249,7 @@ source venv/bin/activate
 #### 3. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-aws.txt
 ```
 
 #### 4. Run the embedding generation script
