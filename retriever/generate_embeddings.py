@@ -33,6 +33,7 @@ import torch
 import gc
 import os
 import sys
+import concurrent.futures
 
 def is_kaggle():
     """Check if running in Kaggle environment"""
@@ -74,9 +75,9 @@ def add_embedding_input_column(df, output_column='embedding_input', max_kw_words
     df[output_column] = df.apply(build_input, axis=1)
     return df
 
-def generate_embeddings(df, text_column, model_name, output_column, prefix='', normalize=True, chunk_size=4, trust_remote_code=False):
+def generate_embeddings_parallel(df, text_column, model_name, output_column, prefix='', normalize=True, chunk_size=4, trust_remote_code=False):
     """
-    Generate embeddings for text data in chunks to manage memory usage.
+    Generate embeddings for text data in parallel to manage memory usage.
     
     Args:
         df (pd.DataFrame): Input DataFrame
@@ -102,19 +103,16 @@ def generate_embeddings(df, text_column, model_name, output_column, prefix='', n
     embeddings = []
     total_chunks = (len(texts) + chunk_size - 1) // chunk_size
     
-    for i in range(0, len(texts), chunk_size):
-        chunk = texts[i:i + chunk_size]
-        print(f"Processing chunk {i//chunk_size + 1}/{total_chunks}")
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = []
+        for i in range(0, len(texts), chunk_size):
+            chunk = texts[i:i + chunk_size]
+            print(f"Processing chunk {i//chunk_size + 1}/{total_chunks}")
+            futures.append(executor.submit(model.encode, chunk, normalize_embeddings=normalize))
         
-        # Generate embeddings for the chunk
-        chunk_embeddings = model.encode(chunk, normalize_embeddings=normalize)
-        embeddings.extend(chunk_embeddings)
-        
-        # Clear memory
-        del chunk_embeddings
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
+        for future in concurrent.futures.as_completed(futures):
+            chunk_embeddings = future.result()
+            embeddings.extend(chunk_embeddings)
     
     df[output_column] = embeddings
     return df
@@ -190,23 +188,36 @@ def main():
             }
         }
     
+    # Check for existing embeddings in the target parquet file
+    target_parquet_path = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
+    if os.path.exists(target_parquet_path):
+        target_metadata = pd.read_parquet(target_parquet_path)
+    else:
+        target_metadata = pd.DataFrame()
+    
     for model_key, model_info in models.items():
+        embedding_column = f"{model_key}_embeddings"
+        if embedding_column in target_metadata.columns:
+            print(f"Embeddings for {model_info['name']} already exist in the target parquet. Skipping...")
+            continue
+        
         print(f"\nGenerating embeddings using {model_info['name']}")
-        inScopeMetadata = generate_embeddings(
+        inScopeMetadata = generate_embeddings_parallel(
             inScopeMetadata,
             text_column="embedding_input",
             model_name=model_info['name'],
-            output_column=f"{model_key}_embeddings",
+            output_column=embedding_column,
             chunk_size=model_info['chunk_size'],
             prefix=model_info['prefix'],
             trust_remote_code=model_info['trust_remote_code']
         )
+        
+        # Save embeddings back to the parquet file
+        output_file = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
+        inScopeMetadata.to_parquet(output_file)
+        print(f"Embeddings for {model_info['name']} saved to {output_file}")
     
-    # Save results
-    print("\nSaving results...")
-    output_file = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
-    inScopeMetadata.to_parquet(output_file)
-    print(f"Done! Results saved to {output_file}")
+    print("Done! All embeddings saved to the parquet file.")
 
 if __name__ == "__main__":
     main() 
