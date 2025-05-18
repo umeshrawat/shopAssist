@@ -48,7 +48,7 @@ def test_retriever(nprobe: int, queries: list):
     retriever = FAISSRetriever(
         index_path="data/faiss_index.index",
         metadata_path="data/inScopeMetadata_with_embeddings.parquet",
-        model_name="all-MiniLM-L12-v2",
+        model_name="all-MiniLM-L6-v2",
         top_k=5,
         nprobe=nprobe,
         cache_size=1000

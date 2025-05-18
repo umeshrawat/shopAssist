@@ -48,7 +48,7 @@ class FAISSRetriever:
         retriever = FAISSRetriever(
             index_path="data/faiss_index.index",
             metadata_path="data/inScopeMetadata_with_embeddings.parquet",
-            model_name="all-MiniLM-L12-v2",  # Optional, for text embedding
+            model_name="all-MiniLM-L6-v2",  # Updated to match generate_embeddings.py
             nprobe=10,  # Number of clusters to search
             cache_size=1000  # Number of embeddings to cache
         )
@@ -82,7 +82,7 @@ class FAISSRetriever:
         self,
         index_path: str,
         metadata_path: str,
-        model_name: Optional[str] = 'all-MiniLM-L12-v2',
+        model_name: Optional[str] = 'all-MiniLM-L6-v2',  # Updated to match generate_embeddings.py
         top_k: int = 5,
         nprobe: int = 10,
         cache_size: int = 1000
@@ -95,6 +95,7 @@ class FAISSRetriever:
             metadata_path (str): Path to the metadata parquet file containing Amazon product data
             model_name (Optional[str]): Name of the Sentence Transformer model for text embedding.
                                       If None, text embedding functionality will be disabled.
+                                      Supported models: 'all-MiniLM-L6-v2', 'nomic-ai/nomic-embed-text-v1.5', 'BAAI/bge-m3', 'Alibaba-NLP/gte-large-en-v1.5'
             top_k (int): Default number of top results to return
             nprobe (int): Number of clusters to search in the FAISS index
             cache_size (int): Number of embeddings to cache

@@ -143,7 +143,7 @@ def main():
     elif is_colab():
         inScopeMetadata = pd.read_parquet("/content/inScopeMetadata_flattened.parquet")
     else:
-        inScopeMetadata = pd.read_parquet("data/inScopeMetadata_flattened.parquet")
+        inScopeMetadata = pd.read_parquet(os.path.join(data_dir, "inScopeMetadata_flattened.parquet"))
     
     # Create embedding input
     print("Creating embedding input...")
