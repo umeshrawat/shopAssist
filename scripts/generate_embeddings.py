@@ -32,11 +32,15 @@ from sentence_transformers import SentenceTransformer
 import torch
 import gc
 import os
-import argparse
+import sys
 
 def is_kaggle():
     """Check if running in Kaggle environment"""
     return os.path.exists('/kaggle/input')
+
+def is_colab():
+    """Check if running in Google Colab environment"""
+    return 'google.colab' in sys.modules
 
 def get_device():
     """Get the best available device"""
@@ -116,15 +120,9 @@ def generate_embeddings(df, text_column, model_name, output_column, prefix='', n
     return df
 
 def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Generate embeddings for text data')
-    parser.add_argument('--macbook', action='store_true', help='Use MacBook-friendly configuration')
-    parser.add_argument('--sample_size', type=int, default=None, help='Number of samples to process (for testing)')
-    parser.add_argument('--kaggle', action='store_true', help='Use Kaggle-optimized configuration')
-    args = parser.parse_args()
-
     # Print environment info
     print(f"Running in Kaggle environment: {is_kaggle()}")
+    print(f"Running in Colab environment: {is_colab()}")
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
@@ -132,6 +130,8 @@ def main():
     # Ensure data directory exists
     if is_kaggle():
         data_dir = "/kaggle/working"
+    elif is_colab():
+        data_dir = "/content"
     else:
         data_dir = "data"
     os.makedirs(data_dir, exist_ok=True)
@@ -140,31 +140,18 @@ def main():
     print("Reading parquet file...")
     if is_kaggle():
         inScopeMetadata = pd.read_parquet("/kaggle/input/english-language-abo-metadata/inScopeMetadata_flattened.parquet")
+    elif is_colab():
+        inScopeMetadata = pd.read_parquet("/content/inScopeMetadata_flattened.parquet")
     else:
         inScopeMetadata = pd.read_parquet("data/inScopeMetadata_flattened.parquet")
-    
-    # If sample size is specified, take a random sample
-    if args.sample_size:
-        print(f"Taking random sample of {args.sample_size} rows...")
-        inScopeMetadata = inScopeMetadata.sample(n=min(args.sample_size, len(inScopeMetadata)))
     
     # Create embedding input
     print("Creating embedding input...")
     inScopeMetadata = add_embedding_input_column(inScopeMetadata)
     
-    # Define models based on configuration
-    if args.macbook:
-        print("Using MacBook-friendly configuration (MiniLM only)...")
-        models = {
-            "minilm": {
-                "name": "all-MiniLM-L6-v2",
-                "trust_remote_code": False,
-                "chunk_size": 8,
-                "prefix": ""
-            }
-        }
-    elif args.kaggle or is_kaggle():
-        print("Using Kaggle-optimized configuration...")
+    # Define models based on environment
+    if is_kaggle() or is_colab():
+        print("Using GPU-optimized configuration...")
         models = {
             "minilm": {
                 "name": "all-MiniLM-L6-v2",
@@ -192,30 +179,13 @@ def main():
             }
         }
     else:
-        # Full model configuration
+        # Local configuration (MacBook-friendly)
+        print("Using local configuration (MiniLM only)...")
         models = {
             "minilm": {
                 "name": "all-MiniLM-L6-v2",
                 "trust_remote_code": False,
                 "chunk_size": 8,
-                "prefix": ""
-            },
-            "nomic_embed": {
-                "name": "nomic-ai/nomic-embed-text-v1.5",
-                "trust_remote_code": True,
-                "chunk_size": 4,
-                "prefix": "search_document: "
-            },
-            "bge_m3": {
-                "name": "BAAI/bge-m3",
-                "trust_remote_code": False,
-                "chunk_size": 4,
-                "prefix": ""
-            },
-            "gte_large": {
-                "name": "Alibaba-NLP/gte-large-en-v1.5",
-                "trust_remote_code": False,
-                "chunk_size": 4,
                 "prefix": ""
             }
         }
@@ -235,8 +205,6 @@ def main():
     # Save results
     print("\nSaving results...")
     output_file = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
-    if args.sample_size:
-        output_file = os.path.join(data_dir, f"inScopeMetadata_with_embeddings_sample_{args.sample_size}.parquet")
     inScopeMetadata.to_parquet(output_file)
     print(f"Done! Results saved to {output_file}")
 
