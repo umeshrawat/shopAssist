@@ -35,6 +35,7 @@ import os
 import sys
 import concurrent.futures
 import threading
+from transformers import AutoModel, AutoTokenizer
 
 def is_kaggle():
     """Check if running in Kaggle environment"""
@@ -94,7 +95,9 @@ def generate_embeddings_parallel(df, text_column, model_name, output_column, pre
     device = get_device()
     print(f"Using device: {device}")
     
-    model = SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
+    # Load quantized model
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name, quantization_config={"load_in_8bit": True})
     model.to(device)
     
     texts = df[text_column].tolist()
