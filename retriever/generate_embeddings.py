@@ -34,6 +34,7 @@ import gc
 import os
 import sys
 import concurrent.futures
+import threading
 
 def is_kaggle():
     """Check if running in Kaggle environment"""
@@ -103,17 +104,21 @@ def generate_embeddings_parallel(df, text_column, model_name, output_column, pre
     embeddings = []
     total_chunks = (len(texts) + chunk_size - 1) // chunk_size
     
+    # Lock for thread safety
+    model_lock = threading.Lock()
+    
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = []
         for i in range(0, len(texts), chunk_size):
             chunk = texts[i:i + chunk_size]
             print(f"Processing chunk {i//chunk_size + 1}/{total_chunks}")
-            futures.append(executor.submit(model.encode, chunk, normalize_embeddings=normalize))
+            futures.append(executor.submit(lambda c: model.encode(c, normalize_embeddings=normalize), chunk))
         
         for future in concurrent.futures.as_completed(futures):
-            chunk_embeddings = future.result()
-            embeddings.extend(chunk_embeddings)
-            print(f"Completed chunk {len(embeddings)//chunk_size}/{total_chunks}")
+            with model_lock:
+                chunk_embeddings = future.result()
+                embeddings.extend(chunk_embeddings)
+                print(f"Completed chunk {len(embeddings)//chunk_size}/{total_chunks}")
     
     df[output_column] = embeddings
     return df
