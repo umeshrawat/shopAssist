@@ -113,6 +113,7 @@ def generate_embeddings_parallel(df, text_column, model_name, output_column, pre
         for future in concurrent.futures.as_completed(futures):
             chunk_embeddings = future.result()
             embeddings.extend(chunk_embeddings)
+            print(f"Completed chunk {len(embeddings)//chunk_size}/{total_chunks}")
     
     df[output_column] = embeddings
     return df
