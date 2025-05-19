@@ -95,9 +95,8 @@ def generate_embeddings_parallel(df, text_column, model_name, output_column, pre
     device = get_device()
     print(f"Using device: {device}")
     
-    # Load quantized model
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name, quantization_config={"load_in_8bit": True})
+    # Load model using SentenceTransformer
+    model = SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
     model.to(device)
     
     texts = df[text_column].tolist()
