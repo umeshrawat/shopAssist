@@ -138,7 +138,7 @@ def main():
     if is_kaggle_env:
         data_dir = "/kaggle/working"
     elif is_colab_env:
-        data_dir = "/content"
+        data_dir = "data"  # Use the 'data' folder for Colab
     else:
         print("This script is intended to run on Kaggle or Colab only.")
         return
