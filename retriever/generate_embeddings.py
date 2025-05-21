@@ -54,12 +54,12 @@ def get_device():
 def add_embedding_input_column(df, output_column='embedding_input', max_kw_words=100):
     """
     Builds a text column by concatenating key metadata fields.
-    
+
     Args:
         df (pd.DataFrame): Input DataFrame with flattened metadata
         output_column (str): Name of the column to create
         max_kw_words (int): Max words to include from item_keywords_flat
-    
+
     Returns:
         pd.DataFrame: The same DataFrame with a new embedding_input column
     """
@@ -80,7 +80,8 @@ def add_embedding_input_column(df, output_column='embedding_input', max_kw_words
 def generate_embeddings_parallel(df, text_column, model_name, output_column, prefix='', normalize=True, chunk_size=4, trust_remote_code=False):
     """
     Generate embeddings for text data in parallel to manage memory usage.
-    
+    Handles potential failures in chunks by assigning None for failed rows.
+
     Args:
         df (pd.DataFrame): Input DataFrame
         text_column (str): Name of the column containing text to embed
@@ -94,35 +95,85 @@ def generate_embeddings_parallel(df, text_column, model_name, output_column, pre
     print(f"Loading model: {model_name}")
     device = get_device()
     print(f"Using device: {device}")
-    
-    # Load model using SentenceTransformer
-    model = SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
-    model.to(device)
-    
+
+    try:
+        # SentenceTransformer is generally preferred for semantic search tasks
+        model = SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
+        model.to(device)
+    except Exception as e:
+        print(f"Error loading model {model_name}: {e}")
+        # Assign None to the output column for all rows if model loading fails
+        df[output_column] = pd.Series([None] * len(df), index=df.index)
+        return df # Return the DataFrame with None embeddings
+
     texts = df[text_column].tolist()
     if prefix:
         texts = [prefix + text for text in texts]
-    
-    embeddings = []
+
+    # Initialize embeddings list with None for every row
+    embeddings = [None] * len(texts)
     total_chunks = (len(texts) + chunk_size - 1) // chunk_size
-    
-    # Lock for thread safety
-    model_lock = threading.Lock()
-    
+
+    # Dictionary to store results by their starting index in the original texts list
+    results = {}
+
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = []
+        futures = {}
+        # Store future and the starting index of the chunk it processes
         for i in range(0, len(texts), chunk_size):
             chunk = texts[i:i + chunk_size]
-            print(f"Processing chunk {i//chunk_size + 1}/{total_chunks}")
-            futures.append(executor.submit(lambda c: model.encode(c, normalize_embeddings=normalize), chunk))
-        
+            # Store the starting index of this chunk
+            future = executor.submit(lambda c: model.encode(c, normalize_embeddings=normalize, show_progress_bar=False), chunk)
+            futures[future] = i # Map future to the starting index of the chunk
+
         for future in concurrent.futures.as_completed(futures):
-            with model_lock:
+            start_index = futures[future]
+            chunk_number = start_index // chunk_size + 1
+            print(f"Processing chunk {chunk_number}/{total_chunks}", end='\r') # Use carriage return for progress on one line
+            try:
                 chunk_embeddings = future.result()
-                embeddings.extend(chunk_embeddings)
-                print(f"Completed chunk {len(embeddings)//chunk_size}/{total_chunks}")
-    
-    df[output_column] = embeddings
+                # Convert numpy array to list if necessary
+                if isinstance(chunk_embeddings, np.ndarray):
+                    chunk_embeddings = chunk_embeddings.tolist()
+                # Place the generated embeddings directly into the correct slice of the results list
+                results[start_index] = chunk_embeddings # Store result by start index
+            except Exception as exc:
+                print(f'\nChunk {chunk_number}/{total_chunks} generated an exception: {exc}')
+                # The corresponding entries in 'embeddings' remain None, which is the desired behavior for failed chunks.
+
+    # Reconstruct the final embeddings list in the correct order
+    for i in range(0, len(texts), chunk_size):
+        if i in results:
+            chunk_embeddings = results[i]
+            # Ensure chunk_embeddings is a list before assignment
+            if isinstance(chunk_embeddings, np.ndarray):
+                chunk_embeddings = chunk_embeddings.tolist()
+            embeddings[i : i + len(chunk_embeddings)] = chunk_embeddings
+
+    # Assign the potentially partial (with None values) embeddings list to the DataFrame column
+    try:
+        # Convert embeddings to a list of lists if they're numpy arrays
+        embeddings_list = []
+        for emb in embeddings:
+            if emb is not None and isinstance(emb, np.ndarray):
+                embeddings_list.append(emb.tolist())
+            else:
+                embeddings_list.append(emb)
+        df[output_column] = pd.Series(embeddings_list, index=df.index)
+    except Exception as e:
+        print(f"Error assigning embeddings to DataFrame column {output_column}: {e}")
+        df[output_column] = pd.Series([None] * len(df), index=df.index)
+
+    # Clean up GPU memory
+    del model
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+    gc.collect()
+
+    # Count non-None embeddings
+    non_none_count = sum(1 for emb in embeddings if emb is not None)
+    print(f"\nFinished generating embeddings for {model_name}. Rows processed: {non_none_count}/{len(df)}")
+
     return df
 
 def main():
@@ -146,16 +197,29 @@ def main():
 
     # Read the parquet file
     print("Reading parquet file...")
-    if is_colab_env:
-        inScopeMetadata = pd.read_parquet(os.path.join(data_dir, "inScopeMetadata_flattened.parquet"))
-    elif is_kaggle_env:
-        inScopeMetadata = pd.read_parquet("/kaggle/input/english-language-abo-metadata/inScopeMetadata_flattened.parquet")
-    else:
-        inScopeMetadata = pd.read_parquet(os.path.join(data_dir, "inScopeMetadata_flattened.parquet"))
+    try:
+        if is_colab_env:
+            parquet_path = "/content/shopAssist/data/inScopeMetadata_flattened.parquet"
+        elif is_kaggle_env:
+            parquet_path = "/kaggle/input/english-language-abo-metadata/inScopeMetadata_flattened.parquet"
+        else:
+            parquet_path = os.path.join(data_dir, "inScopeMetadata_flattened.parquet")
+
+        if not os.path.exists(parquet_path):
+            print(f"Error: Parquet file not found at {parquet_path}")
+            return
+
+        inScopeMetadata = pd.read_parquet(parquet_path)
+        print(f"Successfully read {len(inScopeMetadata)} rows from {parquet_path}")
+
+    except Exception as e:
+        print(f"Error reading parquet file: {e}")
+        return
 
     # Create embedding input
     print("Creating embedding input...")
     inScopeMetadata = add_embedding_input_column(inScopeMetadata)
+    print("Embedding input column created.")
 
     # Use all four models, GPU-optimized chunk sizes
     print("Using GPU-optimized configuration (all models)...")
@@ -169,7 +233,7 @@ def main():
         "nomic_embed": {
             "name": "nomic-ai/nomic-embed-text-v1.5",
             "trust_remote_code": True,
-            "chunk_size": 16,  # Larger chunks for GPU
+            "chunk_size": 8,  # Reduced chunk size to prevent OOM
             "prefix": "search_document: "
         },
         "bge_m3": {
@@ -188,17 +252,45 @@ def main():
 
     target_parquet_path = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
     if os.path.exists(target_parquet_path):
-        target_metadata = pd.read_parquet(target_parquet_path)
+        print(f"Found existing target parquet file at {target_parquet_path}. Reading...")
+        try:
+            target_metadata = pd.read_parquet(target_parquet_path)
+            print(f"Successfully read {len(target_metadata)} rows from target parquet.")
+        except Exception as e:
+            print(f"Error reading existing target parquet: {e}")
+            target_metadata = pd.DataFrame()
+            print("Starting with an empty target DataFrame.")
     else:
+        print(f"No existing target parquet file found at {target_parquet_path}. Creating a new one.")
         target_metadata = pd.DataFrame()
+
+    if not target_metadata.empty:
+        inScopeMetadata = inScopeMetadata.merge(target_metadata, left_index=True, right_index=True, how='left', suffixes=('', '_existing'))
+        print("Merged with existing target parquet.")
 
     for model_key, model_info in models.items():
         embedding_column = f"{model_key}_embeddings"
-        if embedding_column in target_metadata.columns:
-            print(f"Embeddings for {model_info['name']} already exist in the target parquet. Skipping...")
-            continue
+        existing_embedding_column = f"{embedding_column}_existing"
+
+        # Check if existing embeddings are valid (not all None/NaN)
+        if existing_embedding_column in inScopeMetadata.columns:
+            existing_embeddings = inScopeMetadata[existing_embedding_column]
+            if not existing_embeddings.isna().all():
+                print(f"Embeddings for {model_info['name']} ({embedding_column}) already exist and are not all missing. Skipping...")
+                inScopeMetadata[embedding_column] = inScopeMetadata[existing_embedding_column]
+                inScopeMetadata = inScopeMetadata.drop(columns=[existing_embedding_column])
+                continue
+            else:
+                inScopeMetadata = inScopeMetadata.drop(columns=[existing_embedding_column])
+                print(f"Found existing column {embedding_column}_existing but it was all null. Proceeding with generation.")
 
         print(f"\nGenerating embeddings using {model_info['name']}")
+
+        if 'embedding_input' not in inScopeMetadata.columns:
+            print("Error: 'embedding_input' column is missing. Cannot generate embeddings.")
+            inScopeMetadata = add_embedding_input_column(inScopeMetadata)
+            print("Re-created 'embedding_input' column.")
+
         inScopeMetadata = generate_embeddings_parallel(
             inScopeMetadata,
             text_column="embedding_input",
@@ -209,11 +301,11 @@ def main():
             trust_remote_code=model_info['trust_remote_code']
         )
 
-        output_file = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
-        inScopeMetadata.to_parquet(output_file)
-        print(f"Embeddings for {model_info['name']} saved to {output_file}")
+        columns_to_save = [col for col in inScopeMetadata.columns if not col.endswith('_existing')]
+        inScopeMetadata[columns_to_save].to_parquet(target_parquet_path)
+        print(f"Embeddings for {model_info['name']} saved to {target_parquet_path}")
 
     print("Done! All embeddings saved to the parquet file.")
 
 if __name__ == "__main__":
-    main() 
+    main()
