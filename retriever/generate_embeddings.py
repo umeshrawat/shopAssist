@@ -134,11 +134,11 @@ def main():
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    # Use the appropriate data directory
-    if is_kaggle_env:
-        data_dir = "/kaggle/working"
-    elif is_colab_env:
+    # Check for Colab first, then Kaggle
+    if is_colab_env:
         data_dir = "data"  # Use the 'data' folder for Colab
+    elif is_kaggle_env:
+        data_dir = "/kaggle/working"
     else:
         print("This script is intended to run on Kaggle or Colab only.")
         return
@@ -146,7 +146,9 @@ def main():
 
     # Read the parquet file
     print("Reading parquet file...")
-    if is_kaggle_env:
+    if is_colab_env:
+        inScopeMetadata = pd.read_parquet(os.path.join(data_dir, "inScopeMetadata_flattened.parquet"))
+    elif is_kaggle_env:
         inScopeMetadata = pd.read_parquet("/kaggle/input/english-language-abo-metadata/inScopeMetadata_flattened.parquet")
     else:
         inScopeMetadata = pd.read_parquet(os.path.join(data_dir, "inScopeMetadata_flattened.parquet"))
