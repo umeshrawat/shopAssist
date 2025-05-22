@@ -219,7 +219,7 @@ def main():
     os.makedirs(data_dir, exist_ok=True)
 
     # Read the parquet file
-    print("Reading parquet file...")
+    print("Reading source parquet file...")
     try:
         if is_colab_env:
             parquet_path = "/content/shopAssist/data/inScopeMetadata_flattened.parquet"
@@ -234,14 +234,14 @@ def main():
             return
 
         if not os.path.exists(parquet_path):
-            print(f"Error: Parquet file not found at {parquet_path}")
+            print(f"Error: Source parquet file not found at {parquet_path}")
             return
 
         inScopeMetadata = pd.read_parquet(parquet_path)
         print(f"Successfully read {len(inScopeMetadata)} rows from {parquet_path}")
 
     except Exception as e:
-        print(f"Error reading parquet file: {e}")
+        print(f"Error reading source parquet file: {e}")
         return
 
     # Create embedding input
@@ -249,96 +249,102 @@ def main():
     inScopeMetadata = add_embedding_input_column(inScopeMetadata)
     print("Embedding input column created.")
 
-    # Use all four models, GPU-optimized chunk sizes
-    print("Using GPU-optimized configuration (all models)...")
+    # Define models to use
     models = {
         "minilm": {
             "name": "all-MiniLM-L6-v2",
             "trust_remote_code": False,
-            "chunk_size": get_optimal_chunk_size('all-MiniLM-L6-v2', torch.cuda.is_available(),
-                torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else None),
             "prefix": ""
         },
         "nomic_embed": {
             "name": "nomic-ai/nomic-embed-text-v1.5",
             "trust_remote_code": True,
-            "chunk_size": get_optimal_chunk_size('nomic-ai/nomic-embed-text-v1.5', torch.cuda.is_available(),
-                torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else None),
             "prefix": "search_document: "
         },
         "bge_m3": {
             "name": "BAAI/bge-m3",
             "trust_remote_code": False,
-            "chunk_size": get_optimal_chunk_size('BAAI/bge-m3', torch.cuda.is_available(),
-                torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else None),
             "prefix": ""
         },
         "gte_large": {
             "name": "Alibaba-NLP/gte-large-en-v1.5",
             "trust_remote_code": False,
-            "chunk_size": get_optimal_chunk_size('Alibaba-NLP/gte-large-en-v1.5', torch.cuda.is_available(),
-                torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else None),
             "prefix": ""
         }
     }
 
     target_parquet_path = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
+    existing_embeddings_df = pd.DataFrame()
+
     if os.path.exists(target_parquet_path):
         print(f"Found existing target parquet file at {target_parquet_path}. Reading...")
         try:
-            target_metadata = pd.read_parquet(target_parquet_path)
-            print(f"Successfully read {len(target_metadata)} rows from target parquet.")
-        except Exception as e:
-            print(f"Error reading existing target parquet: {e}")
-            target_metadata = pd.DataFrame()
-            print("Starting with an empty target DataFrame.")
-    else:
-        print(f"No existing target parquet file found at {target_parquet_path}. Creating a new one.")
-        target_metadata = pd.DataFrame()
+            existing_embeddings_df = pd.read_parquet(target_parquet_path)
+            print(f"Successfully read {len(existing_embeddings_df)} rows from target parquet.")
+            # Ensure indices align if we are to merge or update based on index
+            if not existing_embeddings_df.index.equals(inScopeMetadata.index):
+                 print("Warning: Indices of existing embeddings file do not match source data. Proceeding with caution.")
+                 # Attempt to reindex existing data to match source data indices
+                 existing_embeddings_df = existing_embeddings_df.reindex(inScopeMetadata.index)
 
-    if not target_metadata.empty:
-        inScopeMetadata = inScopeMetadata.merge(target_metadata, left_index=True, right_index=True, how='left', suffixes=('', '_existing'))
-        print("Merged with existing target parquet.")
+        except Exception as e:
+            print(f"Error reading existing target parquet: {e}. Starting with an empty existing embeddings DataFrame.")
+            existing_embeddings_df = pd.DataFrame()
+
+    # Get GPU info for chunk size calculation if available
+    is_gpu, gpu_info = is_gpu_available()
+    gpu_memory = gpu_info[0]['memory'] if is_gpu and gpu_info else None
 
     for model_key, model_info in models.items():
         embedding_column = f"{model_key}_embeddings"
-        existing_embedding_column = f"{embedding_column}_existing"
 
-        # Check if existing embeddings are valid (not all None/NaN)
-        if existing_embedding_column in inScopeMetadata.columns:
-            existing_embeddings = inScopeMetadata[existing_embedding_column]
-            if not existing_embeddings.isna().all():
-                print(f"Embeddings for {model_info['name']} ({embedding_column}) already exist and are not all missing. Skipping...")
-                inScopeMetadata[embedding_column] = inScopeMetadata[existing_embedding_column]
-                inScopeMetadata = inScopeMetadata.drop(columns=[existing_embedding_column])
-                continue
-            else:
-                inScopeMetadata = inScopeMetadata.drop(columns=[existing_embedding_column])
-                print(f"Found existing column {embedding_column}_existing but it was all null. Proceeding with generation.")
+        # Check if embeddings for this model already exist in the target file data
+        if embedding_column in existing_embeddings_df.columns and not existing_embeddings_df[embedding_column].isna().all():
+             print(f"Embeddings for {model_info['name']} ({embedding_column}) already exist in the target file and are not all missing. Skipping generation.")
+             # Copy the existing embeddings to the main dataframe if needed (reindex handles alignment)
+             inScopeMetadata[embedding_column] = existing_embeddings_df[embedding_column]
+             continue # Skip generation for this model
 
-        print(f"\nGenerating embeddings using {model_info['name']}")
+        print(f"\nGenerating embeddings using {model_info['name']}. Column: {embedding_column}")
 
         if 'embedding_input' not in inScopeMetadata.columns:
             print("Error: 'embedding_input' column is missing. Cannot generate embeddings.")
+            # This should not happen if previous steps were successful, but as a safeguard
             inScopeMetadata = add_embedding_input_column(inScopeMetadata)
             print("Re-created 'embedding_input' column.")
+
+        # Get chunk size for the current model and available hardware
+        current_chunk_size = get_optimal_chunk_size(
+            model_info['name'],
+            is_gpu,
+            gpu_memory
+        )
+        print(f"Using chunk size: {current_chunk_size}")
 
         embeddings = generate_embeddings_parallel(
             inScopeMetadata['embedding_input'].values,
             model_info['name'],
-            chunk_size=model_info['chunk_size'],
-            max_workers=4
+            chunk_size=current_chunk_size,
+            max_workers=4 # Keep max workers as is
         )
 
         if embeddings is not None:
             inScopeMetadata[embedding_column] = embeddings.tolist()
-            columns_to_save = [col for col in inScopeMetadata.columns if not col.endswith('_existing')]
-            inScopeMetadata[columns_to_save].to_parquet(target_parquet_path)
-            print(f"Embeddings for {model_info['name']} saved to {target_parquet_path}")
+            print(f"Generated embeddings for {model_info['name']}")
         else:
             print(f"Failed to generate embeddings for {model_info['name']}")
 
-    print("Done! All embeddings saved to the parquet file.")
+    # Save the final DataFrame with all embeddings
+    print(f"Saving updated DataFrame to {target_parquet_path}...")
+    try:
+        # Ensure only necessary columns are kept if the source had extra after merge attempt (shouldn't now with refactor)
+        # Let's just save the inScopeMetadata which now contains original + generated/copied embeddings
+        inScopeMetadata.to_parquet(target_parquet_path)
+        print("Updated DataFrame saved successfully.")
+    except Exception as e:
+        print(f"Error saving updated parquet file: {e}")
+
+    print("Done!")
 
 if __name__ == "__main__":
     main()
