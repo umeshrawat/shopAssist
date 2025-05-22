@@ -156,12 +156,12 @@ def get_optimal_chunk_size(model_name, is_gpu, gpu_memory=None):
             'Alibaba-NLP/gte-large-en-v1.5': 16
         }.get(model_name, 32)
 
-def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4):
+def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4, trust_remote_code=False):
     """Generate embeddings in parallel using the specified model"""
     try:
-        # Load model with GPU if available
+        # Load model with GPU if available, respecting trust_remote_code
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        model = SentenceTransformer(model_name, device=device)
+        model = SentenceTransformer(model_name, device=device, trust_remote_code=trust_remote_code)
         
         # Convert texts to list if it's a numpy array
         if isinstance(texts, np.ndarray):
@@ -325,7 +325,8 @@ def main():
             inScopeMetadata['embedding_input'].values,
             model_info['name'],
             chunk_size=current_chunk_size,
-            max_workers=4 # Keep max workers as is
+            max_workers=4,
+            trust_remote_code=model_info['trust_remote_code']
         )
 
         if embeddings is not None:
