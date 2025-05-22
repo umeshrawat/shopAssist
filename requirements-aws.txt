@@ -1,1 +1,4 @@
- 
+# AWS-specific requirements
+boto3>=1.26.0
+awscli>=1.27.0
+s3fs>=2023.1.0  # For S3 file system operations 

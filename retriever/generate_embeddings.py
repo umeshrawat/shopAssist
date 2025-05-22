@@ -36,6 +36,15 @@ import sys
 import concurrent.futures
 import threading
 from transformers import AutoModel, AutoTokenizer
+from tqdm import tqdm
+import logging
+from pathlib import Path
+import platform
+import psutil
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def is_kaggle():
     """Check if running in Kaggle environment"""
@@ -44,6 +53,27 @@ def is_kaggle():
 def is_colab():
     """Check if running in Google Colab environment"""
     return 'google.colab' in sys.modules
+
+def is_aws_ec2():
+    """Check if running on AWS EC2"""
+    try:
+        with open('/sys/hypervisor/uuid', 'r') as f:
+            return 'ec2' in f.read().lower()
+    except:
+        return False
+
+def is_gpu_available():
+    """Check if GPU is available and return device info"""
+    if torch.cuda.is_available():
+        gpu_count = torch.cuda.device_count()
+        gpu_info = []
+        for i in range(gpu_count):
+            gpu_info.append({
+                'name': torch.cuda.get_device_name(i),
+                'memory': torch.cuda.get_device_properties(i).total_memory / 1024**3  # Convert to GB
+            })
+        return True, gpu_info
+    return False, None
 
 def get_device():
     """Get the best available device"""
@@ -77,104 +107,71 @@ def add_embedding_input_column(df, output_column='embedding_input', max_kw_words
     df[output_column] = df.apply(build_input, axis=1)
     return df
 
-def generate_embeddings_parallel(df, text_column, model_name, output_column, prefix='', normalize=True, chunk_size=4, trust_remote_code=False):
-    """
-    Generate embeddings for text data in parallel to manage memory usage.
-    Handles potential failures in chunks by assigning None for failed rows.
+def get_optimal_chunk_size(model_name, is_gpu, gpu_memory=None):
+    """Get optimal chunk size based on model and hardware"""
+    if is_gpu and gpu_memory:
+        # Adjust chunk size based on GPU memory
+        if gpu_memory >= 16:  # For GPUs with 16GB+ memory
+            return {
+                'all-MiniLM-L6-v2': 512,
+                'nomic-ai/nomic-embed-text-v1.5': 256,
+                'BAAI/bge-m3': 128,
+                'Alibaba-NLP/gte-large-en-v1.5': 64
+            }.get(model_name, 128)
+        else:  # For GPUs with less memory
+            return {
+                'all-MiniLM-L6-v2': 256,
+                'nomic-ai/nomic-embed-text-v1.5': 128,
+                'BAAI/bge-m3': 64,
+                'Alibaba-NLP/gte-large-en-v1.5': 32
+            }.get(model_name, 64)
+    else:
+        # CPU settings
+        return {
+            'all-MiniLM-L6-v2': 128,
+            'nomic-ai/nomic-embed-text-v1.5': 64,
+            'BAAI/bge-m3': 32,
+            'Alibaba-NLP/gte-large-en-v1.5': 16
+        }.get(model_name, 32)
 
-    Args:
-        df (pd.DataFrame): Input DataFrame
-        text_column (str): Name of the column containing text to embed
-        model_name (str): Name of the sentence transformer model to use
-        output_column (str): Name of the column to store embeddings
-        prefix (str): Optional prefix to add to text before embedding
-        normalize (bool): Whether to normalize embeddings
-        chunk_size (int): Number of texts to process at once
-        trust_remote_code (bool): Whether to trust remote code when loading models
-    """
-    print(f"Loading model: {model_name}")
-    device = get_device()
-    print(f"Using device: {device}")
-
+def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4):
+    """Generate embeddings in parallel using the specified model"""
     try:
-        # SentenceTransformer is generally preferred for semantic search tasks
-        model = SentenceTransformer(model_name, trust_remote_code=trust_remote_code)
-        model.to(device)
-    except Exception as e:
-        print(f"Error loading model {model_name}: {e}")
-        # Assign None to the output column for all rows if model loading fails
-        df[output_column] = pd.Series([None] * len(df), index=df.index)
-        return df # Return the DataFrame with None embeddings
-
-    texts = df[text_column].tolist()
-    if prefix:
-        texts = [prefix + text for text in texts]
-
-    # Initialize embeddings list with None for every row
-    embeddings = [None] * len(texts)
-    total_chunks = (len(texts) + chunk_size - 1) // chunk_size
-
-    # Dictionary to store results by their starting index in the original texts list
-    results = {}
-
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {}
-        # Store future and the starting index of the chunk it processes
-        for i in range(0, len(texts), chunk_size):
+        # Load model with GPU if available
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model = SentenceTransformer(model_name, device=device)
+        
+        # Convert texts to list if it's a numpy array
+        if isinstance(texts, np.ndarray):
+            texts = texts.tolist()
+        
+        # Process in chunks
+        embeddings = []
+        for i in tqdm(range(0, len(texts), chunk_size), desc=f"Generating embeddings with {model_name}"):
             chunk = texts[i:i + chunk_size]
-            # Store the starting index of this chunk
-            future = executor.submit(lambda c: model.encode(c, normalize_embeddings=normalize, show_progress_bar=False), chunk)
-            futures[future] = i # Map future to the starting index of the chunk
-
-        for future in concurrent.futures.as_completed(futures):
-            start_index = futures[future]
-            chunk_number = start_index // chunk_size + 1
-            print(f"Processing chunk {chunk_number}/{total_chunks}", end='\r') # Use carriage return for progress on one line
-            try:
-                chunk_embeddings = future.result()
-                # Convert numpy array to list if necessary
-                if isinstance(chunk_embeddings, np.ndarray):
-                    chunk_embeddings = chunk_embeddings.tolist()
-                # Place the generated embeddings directly into the correct slice of the results list
-                results[start_index] = chunk_embeddings # Store result by start index
-            except Exception as exc:
-                print(f'\nChunk {chunk_number}/{total_chunks} generated an exception: {exc}')
-                # The corresponding entries in 'embeddings' remain None, which is the desired behavior for failed chunks.
-
-    # Reconstruct the final embeddings list in the correct order
-    for i in range(0, len(texts), chunk_size):
-        if i in results:
-            chunk_embeddings = results[i]
-            # Ensure chunk_embeddings is a list before assignment
-            if isinstance(chunk_embeddings, np.ndarray):
-                chunk_embeddings = chunk_embeddings.tolist()
-            embeddings[i : i + len(chunk_embeddings)] = chunk_embeddings
-
-    # Assign the potentially partial (with None values) embeddings list to the DataFrame column
-    try:
-        # Convert embeddings to a list of lists if they're numpy arrays
-        embeddings_list = []
-        for emb in embeddings:
-            if emb is not None and isinstance(emb, np.ndarray):
-                embeddings_list.append(emb.tolist())
-            else:
-                embeddings_list.append(emb)
-        df[output_column] = pd.Series(embeddings_list, index=df.index)
+            # Convert chunk to list if it's a numpy array
+            if isinstance(chunk, np.ndarray):
+                chunk = chunk.tolist()
+            chunk_embeddings = model.encode(chunk, show_progress_bar=False)
+            embeddings.extend(chunk_embeddings)
+            
+            # Clear GPU memory after each chunk
+            if device == 'cuda':
+                torch.cuda.empty_cache()
+        
+        # Convert to numpy array
+        embeddings = np.array(embeddings)
+        
+        # Clear memory
+        del model
+        if device == 'cuda':
+            torch.cuda.empty_cache()
+        gc.collect()
+        
+        return embeddings
     except Exception as e:
-        print(f"Error assigning embeddings to DataFrame column {output_column}: {e}")
-        df[output_column] = pd.Series([None] * len(df), index=df.index)
-
-    # Clean up GPU memory
-    del model
-    if device.type == 'cuda':
-        torch.cuda.empty_cache()
-    gc.collect()
-
-    # Count non-None embeddings
-    non_none_count = sum(1 for emb in embeddings if emb is not None)
-    print(f"\nFinished generating embeddings for {model_name}. Rows processed: {non_none_count}/{len(df)}")
-
-    return df
+        logger.error(f"Error generating embeddings with {model_name}: {str(e)}")
+        return None
 
 def main():
     is_kaggle_env = is_kaggle()
@@ -227,25 +224,29 @@ def main():
         "minilm": {
             "name": "all-MiniLM-L6-v2",
             "trust_remote_code": False,
-            "chunk_size": 32,  # Larger chunks for GPU
+            "chunk_size": get_optimal_chunk_size('all-MiniLM-L6-v2', torch.cuda.is_available(),
+                torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else None),
             "prefix": ""
         },
         "nomic_embed": {
             "name": "nomic-ai/nomic-embed-text-v1.5",
             "trust_remote_code": True,
-            "chunk_size": 8,  # Reduced chunk size to prevent OOM
+            "chunk_size": get_optimal_chunk_size('nomic-ai/nomic-embed-text-v1.5', torch.cuda.is_available(),
+                torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else None),
             "prefix": "search_document: "
         },
         "bge_m3": {
             "name": "BAAI/bge-m3",
             "trust_remote_code": False,
-            "chunk_size": 16,  # Larger chunks for GPU
+            "chunk_size": get_optimal_chunk_size('BAAI/bge-m3', torch.cuda.is_available(),
+                torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else None),
             "prefix": ""
         },
         "gte_large": {
             "name": "Alibaba-NLP/gte-large-en-v1.5",
             "trust_remote_code": False,
-            "chunk_size": 16,  # Larger chunks for GPU
+            "chunk_size": get_optimal_chunk_size('Alibaba-NLP/gte-large-en-v1.5', torch.cuda.is_available(),
+                torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else None),
             "prefix": ""
         }
     }
@@ -291,19 +292,20 @@ def main():
             inScopeMetadata = add_embedding_input_column(inScopeMetadata)
             print("Re-created 'embedding_input' column.")
 
-        inScopeMetadata = generate_embeddings_parallel(
-            inScopeMetadata,
-            text_column="embedding_input",
-            model_name=model_info['name'],
-            output_column=embedding_column,
+        embeddings = generate_embeddings_parallel(
+            inScopeMetadata['embedding_input'].values,
+            model_info['name'],
             chunk_size=model_info['chunk_size'],
-            prefix=model_info['prefix'],
-            trust_remote_code=model_info['trust_remote_code']
+            max_workers=4
         )
 
-        columns_to_save = [col for col in inScopeMetadata.columns if not col.endswith('_existing')]
-        inScopeMetadata[columns_to_save].to_parquet(target_parquet_path)
-        print(f"Embeddings for {model_info['name']} saved to {target_parquet_path}")
+        if embeddings is not None:
+            inScopeMetadata[embedding_column] = embeddings.tolist()
+            columns_to_save = [col for col in inScopeMetadata.columns if not col.endswith('_existing')]
+            inScopeMetadata[columns_to_save].to_parquet(target_parquet_path)
+            print(f"Embeddings for {model_info['name']} saved to {target_parquet_path}")
+        else:
+            print(f"Failed to generate embeddings for {model_info['name']}")
 
     print("Done! All embeddings saved to the parquet file.")
 
