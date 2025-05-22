@@ -110,7 +110,7 @@ Unit tests, E2E scripts
 
 1. Generate embeddings:
    ```bash
-   python scripts/generate_embeddings.py
+   python retriever/generate_embeddings.py
    ```
    This script processes the metadata in chunks to generate embeddings using multiple models:
    - Nomic Embed (nomic-ai/nomic-embed-text-v1.5)
@@ -149,21 +149,7 @@ Unit tests, E2E scripts
 
 ## AWS Deployment Instructions
 
-### Requirements Files: Local vs AWS
-
-- **requirements.txt**: Use this for local development on Mac or CPU-only environments. It does NOT include GPU/CUDA-specific packages.
-- **requirements-aws.txt**: Use this for AWS EC2 (GPU) deployment. It includes all NVIDIA CUDA and GPU-specific packages required for GPU acceleration.
-
-### How to Use
-
-- **Local (Mac/CPU):**
-  ```bash
-  pip install -r requirements.txt
-  ```
-- **AWS EC2 (GPU):**
-  ```bash
-  pip install -r requirements-aws.txt
-  ```
+This section provides instructions for deploying the shopAssist application on an AWS EC2 instance, particularly for environments requiring GPU support.
 
 ### 1. Launch an EC2 Instance
 
@@ -178,36 +164,42 @@ Unit tests, E2E scripts
 ssh -i /path/to/your-key.pem ubuntu@<your-ec2-public-ip>
 ```
 
-### 3. Install System Dependencies
-
-```bash
-sudo apt update
-sudo apt install -y git python3 python3-pip python3-venv
-```
-
-### 4. Clone the Repository
+### 3. Clone the Repository
 
 ```bash
 git clone https://github.com/umeshrawat/shopAssist.git
 cd shopAssist
 ```
 
-### 5. Create and Activate a Python Virtual Environment
+### 4. Run the Environment Setup Script
+
+Navigate to the cloned repository directory:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+cd shopAssist
 ```
 
-### 6. Install Python Dependencies (with GPU support)
+Make the setup script executable:
 
 ```bash
-pip install -r requirements-aws.txt
+chmod +x setup_venv.sh
+```
+
+Run the script to install system dependencies (like git, python3, python3-venv), create the Python virtual environment, and install all necessary Python packages from `requirements.txt`:
+
+```bash
+./setup_venv.sh
+```
+
+After the script completes, activate the virtual environment in your current shell:
+
+```bash
+source venv/bin/activate
 ```
 
 ---
 
-**Note:**  
+**Note:**
 As we continue development, we'll update these instructions with steps for running the app, setting environment variables, and more.
 
 #### Example EC2 Hardware Specification
@@ -224,8 +216,8 @@ These are the specs for the EC2 instance used in this deployment:
 
 ### Running the Embedding Generation Script
 
-> **Note:**  
-> All commands below assume you are in the project root directory:  
+> **Note:**
+> All commands below assume you are in the project root directory:
 > `/home/ubuntu/shopAssist`
 
 #### 1. Ensure Git LFS is installed and pull large files
@@ -240,27 +232,31 @@ git lfs install
 git lfs pull
 ```
 
-#### 2. Activate the virtual environment
+#### 2. Set up the environment
+
+Navigate to the project root and run the setup script:
+
+```bash
+cd /home/ubuntu/shopAssist
+chmod +x setup_venv.sh
+./setup_venv.sh
+```
+
+After running the setup script, activate the virtual environment in your current shell:
 
 ```bash
 source venv/bin/activate
 ```
 
-#### 3. Install dependencies
+#### 3. Run the embedding generation script
 
 ```bash
-pip install -r requirements-aws.txt
-```
-
-#### 4. Run the embedding generation script
-
-```bash
-python3 scripts/generate_embeddings.py
+python3 retriever/generate_embeddings.py
 ```
 
 ---
 
-**Troubleshooting:**  
+**Troubleshooting:**
 - If you see errors about missing or corrupted Parquet files, ensure you have run `git lfs pull` in the project root.
 - Always run the script from the project root so relative paths resolve correctly.
 

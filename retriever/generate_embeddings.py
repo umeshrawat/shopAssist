@@ -41,6 +41,7 @@ import logging
 from pathlib import Path
 import platform
 import psutil
+import requests
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -55,11 +56,32 @@ def is_colab():
     return 'google.colab' in sys.modules
 
 def is_aws_ec2():
-    """Check if running on AWS EC2"""
+    """Check if running on AWS EC2 using the instance metadata service."""
     try:
-        with open('/sys/hypervisor/uuid', 'r') as f:
-            return 'ec2' in f.read().lower()
-    except:
+        # Attempt to connect to the instance metadata service (IMDSv1 or IMDSv2)
+        # First, try to get a token (IMDSv2)
+        token_url = "http://169.254.169.254/latest/api/token"
+        token_headers = {'X-aws-ec2-metadata-token-ttl-seconds': '21600'}
+        token_response = requests.put(token_url, headers=token_headers, timeout=1)
+
+        if token_response.status_code == 200:
+            token = token_response.text
+            headers = {'X-aws-ec2-metadata-token': token}
+            instance_id_url = "http://169.254.169.254/latest/meta-data/instance-id"
+            instance_id_response = requests.get(instance_id_url, headers=headers, timeout=1)
+            return instance_id_response.status_code == 200
+        elif token_response.status_code == 405:
+            # Method Not Allowed, likely IMDSv1 only
+            instance_id_url = "http://169.254.169.254/latest/meta-data/instance-id"
+            instance_id_response = requests.get(instance_id_url, timeout=1)
+            return instance_id_response.status_code == 200
+
+    except requests.exceptions.RequestException:
+        # Connection error, not on EC2 or IMDS is disabled/firewalled
+        return False
+    except Exception as e:
+        # Other unexpected errors
+        print(f"Error during EC2 detection: {e}")
         return False
 
 def is_gpu_available():
@@ -176,19 +198,23 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
 def main():
     is_kaggle_env = is_kaggle()
     is_colab_env = is_colab()
+    is_ec2_env = is_aws_ec2()
     print(f"Running in Kaggle environment: {is_kaggle_env}")
     print(f"Running in Colab environment: {is_colab_env}")
+    print(f"Running in EC2 environment: {is_ec2_env}")
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    # Check for Colab first, then Kaggle
+    # Determine data directory based on environment
     if is_colab_env:
         data_dir = "data"  # Use the 'data' folder for Colab
     elif is_kaggle_env:
         data_dir = "/kaggle/working"
+    elif is_ec2_env:
+        data_dir = "data" # Use the 'data' folder for EC2
     else:
-        print("This script is intended to run on Kaggle or Colab only.")
+        print("This script is intended to run on Kaggle, Colab, or EC2 only.")
         return
     os.makedirs(data_dir, exist_ok=True)
 
@@ -199,8 +225,13 @@ def main():
             parquet_path = "/content/shopAssist/data/inScopeMetadata_flattened.parquet"
         elif is_kaggle_env:
             parquet_path = "/kaggle/input/english-language-abo-metadata/inScopeMetadata_flattened.parquet"
-        else:
+        elif is_ec2_env:
+             # Assuming the data is in a 'data' folder relative to the script's execution directory
             parquet_path = os.path.join(data_dir, "inScopeMetadata_flattened.parquet")
+        else:
+             # This case should ideally not be reached due to the check above
+            print("Unknown environment. Cannot determine parquet file path.")
+            return
 
         if not os.path.exists(parquet_path):
             print(f"Error: Parquet file not found at {parquet_path}")

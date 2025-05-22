@@ -1,7 +1,0 @@
-# AWS-specific requirements with security updates
-boto3>=1.34.0  # Latest version with security fixes
-awscli>=1.32.0  # Latest version with security fixes
-s3fs>=2024.2.0  # Latest version with security fixes
-botocore>=1.34.0  # Required by boto3, updated for security
-s3transfer>=0.10.0  # Required by boto3, updated for security
-jmespath>=1.0.1  # Required by boto3, updated for security 
