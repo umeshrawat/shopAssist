@@ -46,8 +46,19 @@ import json
 from datetime import datetime
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # Force output to stdout
+    ]
+)
 logger = logging.getLogger(__name__)
+
+# Add a function to force flush stdout
+def force_flush():
+    sys.stdout.flush()
+    sys.stderr.flush()
 
 def is_kaggle():
     """Check if running in Kaggle environment"""
@@ -173,7 +184,12 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
     try:
         # Load model with GPU if available, respecting trust_remote_code
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        logger.info(f"Using device: {device}")
+        force_flush()
+        
         model = SentenceTransformer(model_name, device=device, trust_remote_code=trust_remote_code)
+        logger.info(f"Model loaded: {model_name}")
+        force_flush()
         
         # Convert texts to list if it's a numpy array
         if isinstance(texts, np.ndarray):
@@ -182,6 +198,8 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
         # Process in chunks with memory management
         embeddings = []
         total_chunks = (len(texts) + chunk_size - 1) // chunk_size
+        logger.info(f"Processing {len(texts)} texts in {total_chunks} chunks")
+        force_flush()
         
         for i in tqdm(range(0, len(texts), chunk_size), desc=f"Generating embeddings with {model_name}"):
             chunk = texts[i:i + chunk_size]
@@ -195,6 +213,11 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
             chunk_embeddings = model.encode(chunk, show_progress_bar=False)
             embeddings.extend(chunk_embeddings)
             
+            # Log progress
+            if (i // chunk_size) % max(1, total_chunks // 10) == 0:
+                logger.info(f"Progress: {i}/{len(texts)} texts processed")
+                force_flush()
+            
             # Aggressive memory cleanup after each chunk
             if device == 'cuda':
                 torch.cuda.empty_cache()
@@ -204,9 +227,13 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
             if (i // chunk_size) % max(1, total_chunks // 10) == 0:
                 temp_embeddings = np.array(embeddings)
                 np.save(f"temp_embeddings_{model_name.replace('/', '_')}.npy", temp_embeddings)
+                logger.info(f"Saved intermediate checkpoint at {i}/{len(texts)} texts")
+                force_flush()
         
         # Convert to numpy array
         embeddings = np.array(embeddings)
+        logger.info(f"Completed processing all {len(texts)} texts")
+        force_flush()
         
         # Cleanup
         del model
@@ -217,9 +244,13 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
         return embeddings
     except Exception as e:
         logger.error(f"Error generating embeddings with {model_name}: {str(e)}")
+        force_flush()
         return None
 
 def main():
+    # Force flush at start
+    force_flush()
+    
     is_kaggle_env = is_kaggle()
     is_colab_env = is_colab()
     is_ec2_env = is_aws_ec2()
@@ -228,8 +259,11 @@ def main():
     logger.info(f"Running in Colab environment: {is_colab_env}")
     logger.info(f"Running in EC2 environment: {is_ec2_env}")
     logger.info(f"CUDA available: {torch.cuda.is_available()}")
+    force_flush()
+    
     if torch.cuda.is_available():
         logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
+        force_flush()
     
     # Determine data directory based on environment
     if is_colab_env:
