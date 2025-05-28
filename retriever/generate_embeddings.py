@@ -153,12 +153,23 @@ def get_optimal_chunk_size(model_name, is_gpu, gpu_memory=None):
     else:
         return base_sizes.get(model_name, 32)
 
+def get_checkpoint_paths(data_dir, model_key):
+    """Get paths for checkpoint files in a platform-agnostic way"""
+    checkpoint_dir = os.path.join(data_dir, "checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    return {
+        "parquet": os.path.join(checkpoint_dir, f"checkpoint_{model_key}.parquet"),
+        "temp": os.path.join(checkpoint_dir, f"temp_embeddings_{model_key}.npy")
+    }
+
 def save_checkpoint(df, model_key, data_dir):
     """Save checkpoint after each model's embeddings are generated"""
-    checkpoint_path = os.path.join(data_dir, f"checkpoint_{model_key}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet")
+    paths = get_checkpoint_paths(data_dir, model_key)
     try:
-        df.to_parquet(checkpoint_path)
-        logger.info(f"Checkpoint saved to {checkpoint_path}")
+        # Save parquet checkpoint
+        df.to_parquet(paths["parquet"])
+        logger.info(f"Checkpoint saved to {paths['parquet']}")
         return True
     except Exception as e:
         logger.error(f"Error saving checkpoint: {e}")
@@ -167,14 +178,11 @@ def save_checkpoint(df, model_key, data_dir):
 def load_latest_checkpoint(data_dir, model_key):
     """Load the latest checkpoint for a specific model"""
     try:
-        checkpoint_files = [f for f in os.listdir(data_dir) if f.startswith(f"checkpoint_{model_key}_")]
-        if not checkpoint_files:
-            return None
-        
-        latest_checkpoint = max(checkpoint_files)
-        checkpoint_path = os.path.join(data_dir, latest_checkpoint)
-        logger.info(f"Loading checkpoint from {checkpoint_path}")
-        return pd.read_parquet(checkpoint_path)
+        paths = get_checkpoint_paths(data_dir, model_key)
+        if os.path.exists(paths["parquet"]):
+            logger.info(f"Loading checkpoint from {paths['parquet']}")
+            return pd.read_parquet(paths["parquet"])
+        return None
     except Exception as e:
         logger.error(f"Error loading checkpoint: {e}")
         return None
@@ -201,6 +209,20 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
         logger.info(f"Processing {len(texts)} texts in {total_chunks} chunks")
         force_flush()
         
+        # Get checkpoint paths
+        model_key = model_name.replace('/', '_')
+        paths = get_checkpoint_paths(os.getcwd(), model_key)
+        
+        # Try to load existing temp embeddings if they exist
+        if os.path.exists(paths["temp"]):
+            try:
+                embeddings = np.load(paths["temp"]).tolist()
+                logger.info(f"Loaded existing temp embeddings from {paths['temp']}")
+                force_flush()
+            except Exception as e:
+                logger.error(f"Error loading temp embeddings: {e}")
+                embeddings = []
+        
         for i in tqdm(range(0, len(texts), chunk_size), desc=f"Generating embeddings with {model_name}"):
             chunk = texts[i:i + chunk_size]
             if isinstance(chunk, np.ndarray):
@@ -226,7 +248,7 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
             # Save intermediate results every 10% progress
             if (i // chunk_size) % max(1, total_chunks // 10) == 0:
                 temp_embeddings = np.array(embeddings)
-                np.save(f"temp_embeddings_{model_name.replace('/', '_')}.npy", temp_embeddings)
+                np.save(paths["temp"], temp_embeddings)
                 logger.info(f"Saved intermediate checkpoint at {i}/{len(texts)} texts")
                 force_flush()
         
@@ -273,8 +295,7 @@ def main():
     elif is_ec2_env:
         data_dir = "data"
     else:
-        logger.error("This script is intended to run on Kaggle, Colab, or EC2 only.")
-        return
+        data_dir = "data"  # Default to local data directory
     
     os.makedirs(data_dir, exist_ok=True)
     
@@ -285,11 +306,8 @@ def main():
             parquet_path = "/content/shopAssist/data/inScopeMetadata_flattened.parquet"
         elif is_kaggle_env:
             parquet_path = "/kaggle/input/english-language-abo-metadata/inScopeMetadata_flattened.parquet"
-        elif is_ec2_env:
-            parquet_path = os.path.join(data_dir, "inScopeMetadata_flattened.parquet")
         else:
-            logger.error("Unknown environment. Cannot determine parquet file path.")
-            return
+            parquet_path = os.path.join(data_dir, "inScopeMetadata_flattened.parquet")
 
         if not os.path.exists(parquet_path):
             logger.error(f"Error: Source parquet file not found at {parquet_path}")
