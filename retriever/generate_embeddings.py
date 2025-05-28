@@ -155,12 +155,9 @@ def get_optimal_chunk_size(model_name, is_gpu, gpu_memory=None):
 
 def get_checkpoint_paths(data_dir, model_key):
     """Get paths for checkpoint files in a platform-agnostic way"""
-    checkpoint_dir = os.path.join(data_dir, "checkpoints")
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    
     return {
-        "parquet": os.path.join(checkpoint_dir, f"checkpoint_{model_key}.parquet"),
-        "temp": os.path.join(checkpoint_dir, f"temp_embeddings_{model_key}.npy")
+        "parquet": os.path.join(data_dir, f"checkpoint_{model_key}.parquet"),
+        "temp": os.path.join(data_dir, f"temp_embeddings_{model_key}.npy")
     }
 
 def save_checkpoint(df, model_key, data_dir):
@@ -179,9 +176,27 @@ def load_latest_checkpoint(data_dir, model_key):
     """Load the latest checkpoint for a specific model"""
     try:
         paths = get_checkpoint_paths(data_dir, model_key)
+        logger.info(f"Looking for checkpoint at: {paths['parquet']}")
+        logger.info(f"Looking for temp embeddings at: {paths['temp']}")
+        
+        # First try to load the parquet checkpoint
         if os.path.exists(paths["parquet"]):
-            logger.info(f"Loading checkpoint from {paths['parquet']}")
-            return pd.read_parquet(paths["parquet"])
+            logger.info(f"Found parquet checkpoint at {paths['parquet']}")
+            df = pd.read_parquet(paths["parquet"])
+            logger.info(f"Successfully loaded checkpoint with {len(df)} rows")
+            return df
+        
+        # If no parquet checkpoint, try temp embeddings
+        if os.path.exists(paths["temp"]):
+            logger.info(f"Found temp embeddings at {paths['temp']}")
+            temp_embeddings = np.load(paths["temp"])
+            logger.info(f"Successfully loaded temp embeddings with shape {temp_embeddings.shape}")
+            # Create a DataFrame with the temp embeddings
+            df = pd.DataFrame()
+            df[f"{model_key}_embeddings"] = temp_embeddings.tolist()
+            return df
+            
+        logger.info("No checkpoint or temp embeddings found")
         return None
     except Exception as e:
         logger.error(f"Error loading checkpoint: {e}")
@@ -190,6 +205,30 @@ def load_latest_checkpoint(data_dir, model_key):
 def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4, trust_remote_code=False):
     """Generate embeddings in parallel using the specified model"""
     try:
+        # Get checkpoint paths
+        model_key = model_name.replace('/', '_')
+        paths = get_checkpoint_paths(os.getcwd(), model_key)
+        
+        # Try to load existing temp embeddings if they exist
+        if os.path.exists(paths["temp"]):
+            try:
+                logger.info(f"Found existing temp embeddings at {paths['temp']}")
+                embeddings = np.load(paths["temp"]).tolist()
+                logger.info(f"Loaded {len(embeddings)} existing embeddings")
+                force_flush()
+                
+                # If we have all embeddings, return them
+                if len(embeddings) == len(texts):
+                    logger.info("Found complete set of embeddings, skipping generation")
+                    return np.array(embeddings)
+                else:
+                    logger.info(f"Found partial embeddings ({len(embeddings)}/{len(texts)}), continuing from last checkpoint")
+            except Exception as e:
+                logger.error(f"Error loading temp embeddings: {e}")
+                embeddings = []
+        else:
+            embeddings = []
+        
         # Load model with GPU if available, respecting trust_remote_code
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         logger.info(f"Using device: {device}")
@@ -204,26 +243,12 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
             texts = texts.tolist()
         
         # Process in chunks with memory management
-        embeddings = []
         total_chunks = (len(texts) + chunk_size - 1) // chunk_size
         logger.info(f"Processing {len(texts)} texts in {total_chunks} chunks")
+        logger.info(f"Starting from embedding {len(embeddings)}")
         force_flush()
         
-        # Get checkpoint paths
-        model_key = model_name.replace('/', '_')
-        paths = get_checkpoint_paths(os.getcwd(), model_key)
-        
-        # Try to load existing temp embeddings if they exist
-        if os.path.exists(paths["temp"]):
-            try:
-                embeddings = np.load(paths["temp"]).tolist()
-                logger.info(f"Loaded existing temp embeddings from {paths['temp']}")
-                force_flush()
-            except Exception as e:
-                logger.error(f"Error loading temp embeddings: {e}")
-                embeddings = []
-        
-        for i in tqdm(range(0, len(texts), chunk_size), desc=f"Generating embeddings with {model_name}"):
+        for i in tqdm(range(len(embeddings), len(texts), chunk_size), desc=f"Generating embeddings with {model_name}"):
             chunk = texts[i:i + chunk_size]
             if isinstance(chunk, np.ndarray):
                 chunk = chunk.tolist()
@@ -292,8 +317,6 @@ def main():
         data_dir = "/content/shopAssist/data"
     elif is_kaggle_env:
         data_dir = "/kaggle/working"
-    elif is_ec2_env:
-        data_dir = "data"
     else:
         data_dir = "data"  # Default to local data directory
     
@@ -377,9 +400,9 @@ def main():
     for model_key, model_info in models.items():
         embedding_column = f"{model_key}_embeddings"
         
-        # Check for existing embeddings
+        # Check for existing embeddings in the target parquet
         if embedding_column in existing_embeddings_df.columns and not existing_embeddings_df[embedding_column].isna().all():
-            logger.info(f"Embeddings for {model_info['name']} already exist. Skipping generation.")
+            logger.info(f"Embeddings for {model_info['name']} already exist in target parquet. Skipping generation.")
             inScopeMetadata[embedding_column] = existing_embeddings_df[embedding_column]
             continue
 
