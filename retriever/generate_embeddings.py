@@ -350,7 +350,7 @@ def main():
             },
             "gte_large": {
                 "name": "Alibaba-NLP/gte-large-en-v1.5",
-                "trust_remote_code": False,
+                "trust_remote_code": True,
                 "prefix": ""
             }
         })
