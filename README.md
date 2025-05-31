@@ -84,6 +84,16 @@ Unit tests, E2E scripts
    # They are tracked using Git LFS
    ```
 
+### Download Required Data Files
+
+1. **Download the Embeddings File from Kaggle:**
+   - Visit the Kaggle dataset page: [Link to your Kaggle dataset]
+   - Download the file `inScopeMetadata_with_embeddings.parquet` and place it in the `data/` directory of your project.
+
+2. **Verify the File:**
+   - Ensure the file is located at `data/inScopeMetadata_with_embeddings.parquet`.
+   - This file is required for the semantic search functionality.
+
 ### Development Workflow
 
 1. Activate the virtual environment before starting work:
