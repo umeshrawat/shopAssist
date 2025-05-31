@@ -18,8 +18,8 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     fi
 else
     # Install system dependencies required for Linux
-    sudo apt update
-    sudo apt install -y git python3 python3-pip python3-venv
+sudo apt update
+sudo apt install -y git python3 python3-pip python3-venv
 fi
 
 # Create virtual environment

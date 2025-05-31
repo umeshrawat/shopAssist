@@ -44,6 +44,7 @@ import psutil
 import requests
 import json
 from datetime import datetime
+import glob
 
 # Set up logging
 logging.basicConfig(
@@ -119,39 +120,50 @@ def get_optimal_chunk_size(model_name, is_gpu, gpu_memory=None):
     """Get optimal chunk size based on model, hardware, and available memory"""
     available_memory = get_available_memory()
     
-    # Base chunk sizes for different environments
+    # Base chunk sizes for different environments - optimized for CPU
     if is_kaggle():
         # Kaggle typically has limited memory
-        base_sizes = {
-            'all-MiniLM-L6-v2': 64,
-            'nomic-ai/nomic-embed-text-v1.5': 32,
-            'BAAI/bge-m3': 16,
-            'Alibaba-NLP/gte-large-en-v1.5': 8
-        }
-    elif is_colab():
-        # Colab has more memory but still needs to be conservative
         base_sizes = {
             'all-MiniLM-L6-v2': 128,
             'nomic-ai/nomic-embed-text-v1.5': 64,
             'BAAI/bge-m3': 32,
             'Alibaba-NLP/gte-large-en-v1.5': 16
         }
-    else:
-        # Default sizes for other environments
+    elif is_colab():
+        # Colab has more memory but still needs to be conservative
         base_sizes = {
             'all-MiniLM-L6-v2': 256,
             'nomic-ai/nomic-embed-text-v1.5': 128,
             'BAAI/bge-m3': 64,
             'Alibaba-NLP/gte-large-en-v1.5': 32
         }
-    
-    # Adjust based on available memory
-    if available_memory < 4:  # Less than 4GB available
-        return {k: max(1, v // 4) for k, v in base_sizes.items()}.get(model_name, 8)
-    elif available_memory < 8:  # Less than 8GB available
-        return {k: max(1, v // 2) for k, v in base_sizes.items()}.get(model_name, 16)
     else:
-        return base_sizes.get(model_name, 32)
+        # Default sizes for local CPU - smaller chunks for large models
+        base_sizes = {
+            'all-MiniLM-L6-v2': 512,
+            'nomic-ai/nomic-embed-text-v1.5': 256,
+            'BAAI/bge-m3': 128,
+            'Alibaba-NLP/gte-large-en-v1.5': 2  # Reduced from 8 to 2 for better memory management
+        }
+    
+    # Get base size for the model
+    base_size = base_sizes.get(model_name, 32)
+    
+    # Adjust based on available memory - more conservative for CPU
+    if not is_gpu:  # CPU-specific adjustments
+        if available_memory < 4:  # Less than 4GB available
+            return max(1, int(base_size // 4))
+        elif available_memory < 8:  # Less than 8GB available
+            return max(1, int(base_size // 2))
+        else:
+            return int(base_size)
+    else:  # GPU adjustments
+        if available_memory < 4:
+            return max(1, int(base_size // 2))
+        elif available_memory < 8:
+            return max(1, int(base_size // 1.5))
+        else:
+            return int(base_size)
 
 def get_checkpoint_paths(data_dir, model_key):
     """Get paths for checkpoint files in a platform-agnostic way"""
@@ -229,9 +241,23 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
         else:
             embeddings = []
         
-        # Load model with GPU if available, respecting trust_remote_code
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        logger.info(f"Using device: {device}")
+        # Force CPU for Alibaba model to avoid MPS memory issues
+        if model_name == 'Alibaba-NLP/gte-large-en-v1.5':
+            device = 'cpu'
+            logger.info("Forcing CPU device for Alibaba model to avoid memory issues")
+        # Check for MPS (Metal) availability on Mac for other models
+        elif torch.backends.mps.is_available():
+            device = 'mps'
+            logger.info("Using MPS (Metal) device for GPU acceleration")
+            # Set MPS memory management
+            torch.mps.set_per_process_memory_fraction(0.7)  # Use only 70% of available memory
+        elif torch.cuda.is_available():
+            device = 'cuda'
+            logger.info("Using CUDA device for GPU acceleration")
+        else:
+            device = 'cpu'
+            logger.info("Using CPU device (no GPU available)")
+        
         force_flush()
         
         model = SentenceTransformer(model_name, device=device, trust_remote_code=trust_remote_code)
@@ -248,6 +274,9 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
         logger.info(f"Starting from embedding {len(embeddings)}")
         force_flush()
         
+        # Calculate checkpoint frequency (save every 10% progress)
+        checkpoint_frequency = max(1, total_chunks // 10)
+        
         for i in tqdm(range(len(embeddings), len(texts), chunk_size), desc=f"Generating embeddings with {model_name}"):
             chunk = texts[i:i + chunk_size]
             if isinstance(chunk, np.ndarray):
@@ -257,21 +286,23 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
             if model_name == 'nomic-ai/nomic-embed-text-v1.5':
                 chunk = [f"search_document: {text}" for text in chunk]
             
-            chunk_embeddings = model.encode(chunk, show_progress_bar=False)
-            embeddings.extend(chunk_embeddings)
-            
-            # Log progress
-            if (i // chunk_size) % max(1, total_chunks // 10) == 0:
-                logger.info(f"Progress: {i}/{len(texts)} texts processed")
-                force_flush()
-            
-            # Aggressive memory cleanup after each chunk
-            if device == 'cuda':
+            # Clear memory before processing each chunk
+            if device == 'mps':
+                torch.mps.empty_cache()
+            elif device == 'cuda':
                 torch.cuda.empty_cache()
             gc.collect()
             
-            # Save intermediate results every 10% progress
-            if (i // chunk_size) % max(1, total_chunks // 10) == 0:
+            chunk_embeddings = model.encode(chunk, show_progress_bar=False)
+            embeddings.extend(chunk_embeddings)
+            
+            # Log progress less frequently
+            if (i // chunk_size) % max(1, total_chunks // 20) == 0:
+                logger.info(f"Progress: {i}/{len(texts)} texts processed")
+                force_flush()
+            
+            # Save intermediate results more frequently (every 10% progress)
+            if (i // chunk_size) % checkpoint_frequency == 0:
                 temp_embeddings = np.array(embeddings)
                 np.save(paths["temp"], temp_embeddings)
                 logger.info(f"Saved intermediate checkpoint at {i}/{len(texts)} texts")
@@ -284,7 +315,9 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
         
         # Cleanup
         del model
-        if device == 'cuda':
+        if device == 'mps':
+            torch.mps.empty_cache()
+        elif device == 'cuda':
             torch.cuda.empty_cache()
         gc.collect()
         
@@ -297,6 +330,10 @@ def generate_embeddings_parallel(texts, model_name, chunk_size=32, max_workers=4
 def main():
     # Force flush at start
     force_flush()
+    
+    # Check available memory first, before any processing
+    available_memory = get_available_memory()
+    logger.info(f"Initial available memory: {available_memory:.2f} GB")
     
     is_kaggle_env = is_kaggle()
     is_colab_env = is_colab()
@@ -311,7 +348,7 @@ def main():
     if torch.cuda.is_available():
         logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
         force_flush()
-    
+
     # Determine data directory based on environment
     if is_colab_env:
         data_dir = "/content/shopAssist/data"
@@ -321,7 +358,7 @@ def main():
         data_dir = "data"  # Default to local data directory
     
     os.makedirs(data_dir, exist_ok=True)
-    
+
     # Read the parquet file
     logger.info("Reading source parquet file...")
     try:
@@ -359,24 +396,22 @@ def main():
             "name": "nomic-ai/nomic-embed-text-v1.5",
             "trust_remote_code": True,
             "prefix": "search_document: "
+        },
+        "bge_m3": {
+            "name": "BAAI/bge-m3",
+            "trust_remote_code": False,
+            "prefix": ""
+        },
+        "gte_large": {
+            "name": "Alibaba-NLP/gte-large-en-v1.5",
+            "trust_remote_code": True,
+            "prefix": ""
         }
     }
     
-    # Only include larger models if we have enough memory
-    available_memory = get_available_memory()
-    if available_memory >= 8:  # Only include larger models if we have at least 8GB
-        models.update({
-            "bge_m3": {
-                "name": "BAAI/bge-m3",
-                "trust_remote_code": False,
-                "prefix": ""
-            },
-            "gte_large": {
-                "name": "Alibaba-NLP/gte-large-en-v1.5",
-                "trust_remote_code": True,
-                "prefix": ""
-            }
-        })
+    # Use the initial memory check for model selection
+    # Always include all models, regardless of available memory
+    logger.info("Including all models: " + ", ".join([m['name'] for m in models.values()]))
 
     target_parquet_path = os.path.join(data_dir, "inScopeMetadata_with_embeddings.parquet")
     existing_embeddings_df = pd.DataFrame()
@@ -393,19 +428,31 @@ def main():
             logger.error(f"Error reading existing target parquet: {e}. Starting with an empty DataFrame.")
             existing_embeddings_df = pd.DataFrame()
 
-    # Get GPU info for chunk size calculation
-    is_gpu = torch.cuda.is_available()
-    gpu_memory = get_available_memory() if is_gpu else None
-
+    # Filter out models that already have embeddings in the target parquet
+    models_to_process = {}
     for model_key, model_info in models.items():
         embedding_column = f"{model_key}_embeddings"
-        
-        # Check for existing embeddings in the target parquet
         if embedding_column in existing_embeddings_df.columns and not existing_embeddings_df[embedding_column].isna().all():
             logger.info(f"Embeddings for {model_info['name']} already exist in target parquet. Skipping generation.")
             inScopeMetadata[embedding_column] = existing_embeddings_df[embedding_column]
-            continue
+        else:
+            logger.info(f"Will process model {model_info['name']} as embeddings are not found in target parquet.")
+            models_to_process[model_key] = model_info
 
+    if not models_to_process:
+        logger.info("All models already have embeddings in the target parquet. Nothing to process.")
+        return
+
+    logger.info(f"Will process {len(models_to_process)} models: {', '.join(m['name'] for m in models_to_process.values())}")
+
+    # Get GPU info for chunk size calculation
+    is_gpu = torch.cuda.is_available() or torch.backends.mps.is_available()
+    gpu_memory = get_available_memory() if is_gpu else None
+
+    # Now process only the models that need embeddings
+    for model_key, model_info in models_to_process.items():
+        embedding_column = f"{model_key}_embeddings"
+        
         # Try to load from checkpoint
         checkpoint_df = load_latest_checkpoint(data_dir, model_key)
         if checkpoint_df is not None and embedding_column in checkpoint_df.columns:
@@ -432,7 +479,7 @@ def main():
             model_info['name'],
             chunk_size=current_chunk_size,
             max_workers=4,
-            trust_remote_code=model_info['trust_remote_code']
+            trust_remote_code=model_info.get('trust_remote_code', False)
         )
 
         if embeddings is not None:

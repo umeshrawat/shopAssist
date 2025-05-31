@@ -54,6 +54,28 @@ dmypy.json
 # pytest
 .pytest_cache/
 
-# Large data files (already tracked by Git LFS)
-# *.index
-# *.parquet 
+# Large data files and checkpoints
+*.index
+*.npy
+temp_*
+checkpoint*
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.h5
+*.hdf5
+*.model
+*.weights
+
+# Data directories (except embeddings)
+data/*
+!data/inScopeMetadata_with_embeddings.parquet
+raw_data/
+processed_data/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+.temp/ 
