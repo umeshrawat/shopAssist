@@ -1,9 +1,22 @@
+"""
+Test script for semantic search functionality using pre-computed embeddings.
+This script demonstrates how to perform semantic search on the inScope metadata
+using the pre-computed embeddings stored in the parquet file.
+"""
+
 import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import logging
 from sentence_transformers import SentenceTransformer
 import torch
+import os
+import sys
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from retriever.generate_embeddings import load_embeddings
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -44,16 +57,6 @@ def get_english_value(item):
         return item
         
     return ''
-
-def load_embeddings():
-    """Load the parquet file with embeddings"""
-    try:
-        df = pd.read_parquet('data/inScopeMetadata_with_embeddings.parquet')
-        logger.info(f"Loaded {len(df)} products with embeddings")
-        return df
-    except Exception as e:
-        logger.error(f"Error loading embeddings: {e}")
-        return None
 
 def encode_query(query, model_name):
     """Encode the query text using the specified model"""
